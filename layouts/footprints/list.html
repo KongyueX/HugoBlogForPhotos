@@ -1,10 +1,6 @@
 {{ define "main" }}
   {{ $isEn := eq .Site.Language.Lang "en" }}
-  {{ $tVisitedCities := cond $isEn "Visited Cities" "经过城市" }}
-  {{ $tTimeline := cond $isEn "Timeline" "时间线" }}
-  {{ $tCityPhotos := cond $isEn "City Photos" "城市照片" }}
-  {{ $tChooseCity := cond $isEn "Click a city to view photos." "点击城市查看该城市的照片。" }}
-  {{ $tNoCityInfo := cond $isEn "No city information." "暂无城市信息" }}
+  {{ $tAuthors := cond $isEn "Authors" "作者" }}
   {{ $tNoData := cond $isEn "No footprint data yet. Add country and city fields in data/gallery/photos.yaml." "暂无足迹数据。请在 data/gallery/photos.yaml 中为照片增加 country 与 city 字段。" }}
 
   <header class="mt-6">
@@ -23,18 +19,13 @@
   {{ range sort $items "taken_at" "desc" }}
     {{ $country := .country | default "" }}
     {{ $city := .city | default "" }}
-    {{ if and (eq $country "") .location }}
-      {{ $parts := split .location "," }}
-      {{ if ge (len $parts) 1 }}{{ $country = trim (index $parts 0) " " }}{{ end }}
-      {{ if ge (len $parts) 2 }}{{ $city = trim (index $parts 1) " " }}{{ end }}
-    {{ end }}
     {{ if or $country $city }}
       {{ $footprints = $footprints | append (dict
         "title" (.title | default (cond $isEn "Untitled" "未命名照片"))
+        "author" (.author | default "")
         "url" .url
         "thumb" (.thumb | default .url)
         "taken_at" (.taken_at | default "")
-        "location" (.location | default "")
         "description" (.description | default "")
         "country" $country
         "city" $city
@@ -49,25 +40,30 @@
   {{ end }}
 
   {{ if gt (len $footprints) 0 }}
+    <style>
+      #country-photos .country-thumb {
+        height: 6rem;
+        width: auto;
+      }
+      @media (min-width: 640px) {
+        #country-photos .country-thumb { height: 7.5rem; }
+      }
+      @media (min-width: 768px) {
+        #country-photos .country-thumb { height: 9rem; }
+      }
+    </style>
+
+    <section class="mt-5 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral">{{ $tAuthors }}</h2>
+      <div id="footprints-authors" class="mt-3 flex flex-wrap gap-2"></div>
+    </section>
+
     <section class="mt-8">
       <div id="footprints-map" class="w-full rounded-xl border border-neutral-200 dark:border-neutral-700" style="height:52vh;min-height:360px;"></div>
     </section>
 
     <section class="mt-5 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral">{{ $tVisitedCities }}</h2>
-      <div id="visited-cities" class="mt-3 flex flex-wrap gap-2"></div>
-    </section>
-
-    <section class="mt-5 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral">{{ $tCityPhotos }}</h2>
-      <p id="city-photos-hint" class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{{ $tChooseCity }}</p>
-      <div id="city-photos" class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"></div>
-    </section>
-
-    <section class="mt-5 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral">{{ $tTimeline }}</h2>
-      <div id="timeline-years" class="mt-3 flex gap-2 overflow-x-auto pb-1"></div>
-      <div id="footprints-timeline" class="mt-3 space-y-3"></div>
+      <div id="country-photos" class="flex flex-wrap items-start gap-1.5"></div>
     </section>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsvectormap/dist/css/jsvectormap.min.css" />
@@ -77,7 +73,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
     <script>
       (function () {
-        Fancybox.bind('[data-fancybox^="city-"]', { Images: { zoom: true } });
+        Fancybox.bind('[data-fancybox^="country-"]', { Images: { zoom: true } });
 
         const isEn = {{ if $isEn }}true{{ else }}false{{ end }};
         const entries = {{ $footprints | jsonify | safeJS }};
@@ -90,14 +86,34 @@
           "turkey": "TR", "united arab emirates": "AE", "uae": "AE"
         };
 
-        const selectedRegions = new Set();
-        const cityMap = new Map();
-        const yearMap = new Map();
         const titleCase = (v) => String(v || "").replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase());
         const fmtNumber = (n) => new Intl.NumberFormat(isEn ? "en-US" : "zh-CN").format(Number(n || 0));
         const escAttr = (v) => String(v || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const bindImageSkeleton = (root = document) => {
+          root.querySelectorAll(".js-skeleton-img").forEach((img) => {
+            if (img.dataset.skelBound === "1") return;
+            img.dataset.skelBound = "1";
+            const done = () => {
+              img.classList.remove("opacity-0");
+              img.classList.add("opacity-100");
+              const sk = img.parentElement && img.parentElement.querySelector(".img-skeleton");
+              if (sk) sk.classList.add("hidden");
+            };
+            if (img.complete) done();
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+          });
+        };
+        const formatDate = (v) => {
+          if (!v) return "";
+          const d = new Date(v);
+          if (isNaN(d)) return "";
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        };
         const getCaption = (item) => {
           const parts = [];
+          const placeText = [item.country, item.city].filter(Boolean).join(", ");
+          if (placeText) parts.push(placeText);
           if (item.camera) parts.push(item.camera);
           if (item.lens) parts.push(item.lens);
           const settings = [];
@@ -106,29 +122,19 @@
           if (item.shutter) settings.push(item.shutter);
           if (item.iso) settings.push(`ISO ${item.iso}`);
           if (settings.length) parts.push(settings.join(" | "));
+          if (item.description) parts.push(item.description);
           return parts.join(" | ");
         };
 
-        entries.forEach((item) => {
+        const unknownAuthor = isEn ? "Unknown" : "未署名";
+        const allEntries = entries.map((item) => {
           const country = titleCase(String(item.country || "").trim());
           const city = titleCase(String(item.city || "").trim());
-          item.country = country;
-          item.city = city;
-          if (city) {
-            if (!cityMap.has(city)) cityMap.set(city, []);
-            cityMap.get(city).push(item);
-          }
-
-          const iso = countryAliasToIso2[country.toLowerCase()];
-          if (iso) selectedRegions.add(iso);
-
-          const date = item.taken_at ? new Date(item.taken_at) : null;
-          const yearKey = date && !isNaN(date) ? String(date.getFullYear()) : (isEn ? "Unknown" : "未知");
-          const monthKey = date && !isNaN(date) ? String(date.getMonth() + 1).padStart(2, "0") : (isEn ? "Unknown Month" : "未知月份");
-          if (!yearMap.has(yearKey)) yearMap.set(yearKey, new Map());
-          if (!yearMap.get(yearKey).has(monthKey)) yearMap.get(yearKey).set(monthKey, []);
-          yearMap.get(yearKey).get(monthKey).push(item);
+          const author = titleCase(String(item.author || "").trim()) || unknownAuthor;
+          return { ...item, country, city, author };
         });
+        const authorNames = Array.from(new Set(allEntries.map((i) => i.author))).sort((a, b) => a.localeCompare(b));
+        let activeAuthor = authorNames[0] || unknownAuthor;
 
         const isDark = () => document.documentElement.classList.contains("dark");
         const getMapPalette = () => {
@@ -137,143 +143,144 @@
               background: "#0f172a",
               initialFill: "#1f2937",
               initialStroke: "#334155",
-              selectedFill: "#38bdf8",
-              selectedStroke: "#0ea5e9",
+              visitedFill: "#1d4f76",
+              activeFill: "#38bdf8",
+              activeStroke: "#7dd3fc",
             };
           }
           return {
             background: "#f8fafc",
             initialFill: "#e8eef5",
             initialStroke: "#c8d5e5",
-            selectedFill: "#0061b0",
-            selectedStroke: "#00467f",
+            visitedFill: "#8bb8de",
+            activeFill: "#0061b0",
+            activeStroke: "#00467f",
           };
         };
 
         let mapInstance = null;
+        let activeCountry = "";
+        let currentCountryMap = new Map();
+        const isoForCountry = (country) => countryAliasToIso2[String(country || "").toLowerCase()] || "";
         const renderMap = () => {
           if (mapInstance && typeof mapInstance.destroy === "function") mapInstance.destroy();
           const p = getMapPalette();
+          const activeIso = isoForCountry(activeCountry);
+          const visitedIsos = Array.from(currentCountryMap.keys()).map((name) => isoForCountry(name)).filter(Boolean);
+          const regionValues = {};
+          visitedIsos.forEach((iso) => { regionValues[iso] = 1; });
+          if (activeIso) regionValues[activeIso] = 2;
           mapInstance = new jsVectorMap({
             selector: "#footprints-map",
             map: "world",
             zoomOnScroll: false,
             zoomButtons: true,
             backgroundColor: p.background,
-            selectedRegions: Array.from(selectedRegions),
             regionStyle: {
               initial: { fill: p.initialFill, stroke: p.initialStroke, strokeWidth: 0.7 },
-              selected: { fill: p.selectedFill, stroke: p.selectedStroke, strokeWidth: 1.1 },
+              selected: { fill: p.activeFill, stroke: p.activeStroke, strokeWidth: 1.1 },
+            },
+            series: {
+              regions: [{
+                attribute: "fill",
+                scale: {
+                  1: p.visitedFill,
+                  2: p.activeFill,
+                },
+                values: regionValues,
+              }],
+            },
+            onRegionClick: (event, code) => {
+              event.preventDefault();
+              const selected = Array.from(currentCountryMap.keys()).find((countryName) => isoForCountry(countryName) === code);
+              if (!selected) return;
+              setActiveCountry(selected, currentCountryMap, true);
             },
           });
         };
-        renderMap();
+        const buildIndex = (list) => {
+          const countryMap = new Map();
+          list.forEach((item) => {
+            if (item.country) {
+              if (!countryMap.has(item.country)) countryMap.set(item.country, []);
+              countryMap.get(item.country).push(item);
+            }
+          });
+          return { countryMap };
+        };
+
         const htmlObserver = new MutationObserver((mutations) => {
           for (const m of mutations) {
             if (m.type === "attributes" && m.attributeName === "class") {
-              renderMap();
+              const current = activeAuthor === "__all__" ? allEntries : allEntries.filter((x) => x.author === activeAuthor);
+              const idx = buildIndex(current);
+              currentCountryMap = idx.countryMap;
+              if (activeCountry && idx.countryMap.has(activeCountry)) setActiveCountry(activeCountry, idx.countryMap);
+              else {
+                const first = Array.from(idx.countryMap.keys()).sort((a, b) => a.localeCompare(b))[0] || "";
+                setActiveCountry(first, idx.countryMap);
+              }
               break;
             }
           }
         });
         htmlObserver.observe(document.documentElement, { attributes: true });
 
-        const cityWrap = document.getElementById("visited-cities");
-        const cityPhotos = document.getElementById("city-photos");
-        const cityHint = document.getElementById("city-photos-hint");
+        const authorWrap = document.getElementById("footprints-authors");
+        const countryPhotos = document.getElementById("country-photos");
 
-        const renderCityPhotos = (city) => {
-          const list = cityMap.get(city) || [];
-          cityHint.textContent = city ? `${city} · ${fmtNumber(list.length)}` : (isEn ? "Click a city to view photos." : "点击城市查看该城市的照片。");
-          cityPhotos.innerHTML = list.map((item) => `
-            <article class="overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
-              <a href="${item.url}" data-fancybox="city-${city}" data-caption="${escAttr(getCaption(item))}" class="block aspect-[4/3] overflow-hidden bg-neutral-100 dark:bg-neutral-800">
-                <img src="${item.thumb}" alt="${item.title}" loading="lazy" class="h-full w-full object-cover" />
-              </a>
-              <div class="space-y-1 p-3">
-                <p class="text-xs text-neutral-600 dark:text-neutral-300">${item.taken_at || ""}</p>
+        const renderCountryPhotos = (country, countryMap) => {
+          const list = countryMap.get(country) || [];
+          countryPhotos.innerHTML = list.map((item) => `
+            <a href="${item.url}" data-fancybox="country-${escAttr(country)}" data-caption="${escAttr(getCaption(item))}" class="group block">
+              <div class="relative flex items-center justify-center rounded-sm bg-neutral-100 p-1 dark:bg-neutral-800">
+                <div class="img-skeleton absolute inset-0 rounded-sm bg-neutral-200/80 dark:bg-neutral-700/70 animate-pulse"></div>
+                <img src="${item.thumb}" alt="${item.title}" loading="lazy" class="js-skeleton-img country-thumb block opacity-0 transition-opacity duration-500 group-hover:opacity-90" />
               </div>
-            </article>
+            </a>
           `).join("");
+          Fancybox.bind('[data-fancybox^="country-"]', { Images: { zoom: true } });
+          bindImageSkeleton(countryPhotos);
         };
 
-        const cities = Array.from(cityMap.keys()).sort((a, b) => a.localeCompare(b));
-        if (!cities.length) {
-          cityWrap.innerHTML = `<span class="text-sm text-neutral-500 dark:text-neutral-300">${isEn ? "No city information." : "暂无城市信息"}</span>`;
-        } else {
-          cityWrap.innerHTML = cities.map((city) => `
-            <button type="button" data-city="${city}" class="city-chip inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-900/50">
-              ${city} (${fmtNumber(cityMap.get(city).length)})
-            </button>
-          `).join("");
-
-          cityWrap.addEventListener("click", (e) => {
-            const btn = e.target.closest(".city-chip");
-            if (!btn) return;
-            const city = btn.dataset.city;
-            cityWrap.querySelectorAll(".city-chip").forEach((chip) => chip.classList.remove("ring-2", "ring-primary-500"));
-            btn.classList.add("ring-2", "ring-primary-500");
-            renderCityPhotos(city);
-          });
-
-          renderCityPhotos(cities[0]);
-          cityWrap.querySelector(".city-chip")?.classList.add("ring-2", "ring-primary-500");
-        }
-
-        const timelineEl = document.getElementById("footprints-timeline");
-        const yearTabs = document.getElementById("timeline-years");
-        const yearKeys = Array.from(yearMap.keys()).sort((a, b) => (a < b ? 1 : -1));
-
-        const renderYearTimeline = (year) => {
-          const months = yearMap.get(year);
-          const monthKeys = Array.from(months.keys()).sort((a, b) => (a < b ? 1 : -1));
-          timelineEl.innerHTML = monthKeys.map((month) => {
-            const list = months.get(month);
-            const cityList = Array.from(new Set(list.map((x) => x.city).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-            return `
-              <div class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
-                <div class="flex items-center justify-between gap-3">
-                  <h3 class="text-sm font-semibold text-neutral-900 dark:text-neutral">${year}-${month}</h3>
-                  <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">${fmtNumber(list.length)}</span>
-                </div>
-                <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-300">${isEn ? "Cities" : "城市"}: ${fmtNumber(cityList.length)}</p>
-                <div class="mt-2 flex flex-wrap gap-2">
-                  ${cityList.map((city) => `<button type="button" data-city="${city}" class="timeline-city rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800">${city}</button>`).join("")}
-                </div>
-              </div>
-            `;
-          }).join("");
+        const setActiveCountry = (country, countryMap, fromMap = false) => {
+          activeCountry = country || "";
+          renderCountryPhotos(activeCountry, countryMap);
+          renderMap();
         };
 
-        yearTabs.innerHTML = yearKeys.map((year, idx) => {
-          const count = Array.from(yearMap.get(year).values()).reduce((n, list) => n + list.length, 0);
-          return `<button type="button" data-year="${year}" class="timeline-year whitespace-nowrap rounded-full border px-3 py-1.5 text-sm transition ${idx === 0 ? "border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-200" : "border-neutral-300 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800"}">${year} <span class="ml-1 text-xs opacity-80">${fmtNumber(count)}</span></button>`;
-        }).join("");
-
-        if (yearKeys.length) renderYearTimeline(yearKeys[0]);
-        yearTabs.addEventListener("click", (e) => {
-          const btn = e.target.closest(".timeline-year");
-          if (!btn) return;
-          const year = btn.dataset.year;
-          yearTabs.querySelectorAll(".timeline-year").forEach((el) => {
-            el.classList.remove("border-primary-500", "bg-primary-50", "text-primary-700", "dark:bg-primary-900/40", "dark:text-primary-200");
-            el.classList.add("border-neutral-300", "text-neutral-700", "dark:border-neutral-600", "dark:text-neutral-200");
-          });
-          btn.classList.remove("border-neutral-300", "text-neutral-700", "dark:border-neutral-600", "dark:text-neutral-200");
-          btn.classList.add("border-primary-500", "bg-primary-50", "text-primary-700", "dark:bg-primary-900/40", "dark:text-primary-200");
-          renderYearTimeline(year);
-        });
-
-        timelineEl.addEventListener("click", (e) => {
-          const btn = e.target.closest(".timeline-city");
-          if (!btn) return;
-          const city = btn.dataset.city;
-          const chip = cityWrap.querySelector(`.city-chip[data-city="${city}"]`);
-          if (chip) {
-            chip.click();
-            chip.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+        const renderDashboard = () => {
+          const list = allEntries.filter((x) => x.author === activeAuthor);
+          const { countryMap } = buildIndex(list);
+          currentCountryMap = countryMap;
+          renderMap();
+          const countries = Array.from(countryMap.keys()).sort((a, b) => a.localeCompare(b));
+          if (!countries.length) {
+            countryPhotos.innerHTML = "";
+            return;
           }
-        });
+          const defaultCountry = activeCountry && countryMap.has(activeCountry) ? activeCountry : countries[0];
+          setActiveCountry(defaultCountry, countryMap);
+        };
+
+        authorWrap.innerHTML = authorNames.map((name, idx) => {
+          const count = allEntries.filter((e) => e.author === name).length;
+          return `<button type="button" data-author="${escAttr(name)}" class="author-chip inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium shadow-sm transition hover:-translate-y-0.5 hover:shadow ${idx === 0 ? "border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-200" : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"}">${name} (${fmtNumber(count)})</button>`;
+        }).join("");
+        authorWrap.onclick = (e) => {
+          const btn = e.target.closest(".author-chip");
+          if (!btn) return;
+          activeAuthor = btn.dataset.author || activeAuthor;
+          authorWrap.querySelectorAll(".author-chip").forEach((chip) => {
+            chip.classList.remove("border-primary-500", "bg-primary-50", "text-primary-700", "dark:bg-primary-900/40", "dark:text-primary-200");
+            chip.classList.add("border-neutral-300", "bg-white", "text-neutral-700", "dark:border-neutral-600", "dark:bg-neutral-800", "dark:text-neutral-200");
+          });
+          btn.classList.remove("border-neutral-300", "bg-white", "text-neutral-700", "dark:border-neutral-600", "dark:bg-neutral-800", "dark:text-neutral-200");
+          btn.classList.add("border-primary-500", "bg-primary-50", "text-primary-700", "dark:bg-primary-900/40", "dark:text-primary-200");
+          renderDashboard();
+        };
+
+        renderDashboard();
       })();
     </script>
   {{ else }}
