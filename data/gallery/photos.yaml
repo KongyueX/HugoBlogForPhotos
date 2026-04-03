@@ -4,23 +4,6 @@
 # 足迹页面使用 country / city 进行国家与城市高亮。
 
 photos:
-  - title: "海边日落"
-    url: "https://i.ibb.co/8cQxH7p/sample-sunset.jpg"
-    thumb: "https://i.ibb.co/8cQxH7p/sample-sunset.jpg"
-    taken_at: "2026-03-15T18:20:00+08:00"
-    country: "China"
-    city: "Xiamen"
-    location: "China, Xiamen"
-    description: "傍晚时分海风很轻，天空从橙色渐变到蓝色。"
-
-  - title: "雨后街角"
-    url: "https://i.ibb.co/wCBM8rY/sample-street.jpg"
-    thumb: "https://i.ibb.co/wCBM8rY/sample-street.jpg"
-    taken_at: "2026-02-21T20:05:00+08:00"
-    country: "China"
-    city: "Shanghai"
-    location: "China, Shanghai"
-    description: "路灯在积水里形成反射，色彩很有电影感。"
 
   - title: "IMG_2786"
     url: "https://i.ibb.co/Y7rnkdJk/2994545e1ab2.jpg"
