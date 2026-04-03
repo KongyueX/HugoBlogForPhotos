@@ -3,7 +3,6 @@
   {{ $mapInitFail := cond $isEn "Map failed to initialize." "地图初始化失败。" }}
   {{ $mapNoData := cond $isEn "No photo data available." "暂无照片数据。" }}
   {{ $tAuthor := cond $isEn "Author" "作者" }}
-  {{ $tAllCountries := cond $isEn "All Countries" "全部国家" }}
   {{ $tNoPhotosMatch := cond $isEn "No photos for current author/country." "当前作者/国家没有照片。" }}
   {{ $tSelectAuthor := cond $isEn "Select an author to view visited countries." "选择作者后查看去过的国家。" }}
   {{ $items := hugo.Data.gallery.photos.photos | default (slice) }}
@@ -33,7 +32,6 @@
   </section>
 
   <section class="mt-8 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
-    <p id="footprints-selected-country" class="mb-4 text-sm text-neutral-600 dark:text-neutral-300">{{ $tAllCountries }}</p>
     <div id="footprints-album" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {{ range $sorted }}
         {{ $imgURL := .url }}
@@ -44,16 +42,31 @@
         {{ $city := .city | default "" }}
         {{ $dateText := "" }}
         {{ with .taken_at }}{{ $dateText = (time .).Format "2006-01-02" }}{{ end }}
+        {{ $countryDisplay := title $country }}
+        {{ $cityDisplay := title $city }}
+        {{ $placeText := "" }}
+        {{ if or $countryDisplay $cityDisplay }}{{ $placeText = delimit (slice $countryDisplay $cityDisplay) ", " }}{{ end }}
+        {{ $settings := slice }}
+        {{ with .focal_length }}{{ $settings = $settings | append . }}{{ end }}
+        {{ with .aperture }}{{ $settings = $settings | append (printf "f/%v" .) }}{{ end }}
+        {{ with .shutter }}{{ $settings = $settings | append . }}{{ end }}
+        {{ with .iso }}{{ $settings = $settings | append (printf "ISO %v" .) }}{{ end }}
+        {{ $captionParts := slice }}
+        {{ with $dateText }}{{ $captionParts = $captionParts | append . }}{{ end }}
+        {{ with $placeText }}{{ $captionParts = $captionParts | append . }}{{ end }}
+        {{ with .camera }}{{ $captionParts = $captionParts | append . }}{{ end }}
+        {{ with .lens }}{{ $captionParts = $captionParts | append . }}{{ end }}
+        {{ if gt (len $settings) 0 }}{{ $captionParts = $captionParts | append (delimit $settings " | ") }}{{ end }}
+        {{ with .description }}{{ $captionParts = $captionParts | append . }}{{ end }}
         <article
           class="footprint-photo-card"
           data-author="{{ lower $author }}"
           data-author-label="{{ $author }}"
           data-country="{{ $country }}"
           data-country-lower="{{ lower $country }}">
-          <a href="{{ $imgURL }}" target="_blank" rel="noreferrer" class="block overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100 p-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-800">
+          <a href="{{ $imgURL }}" data-fancybox="footprints-album" data-caption="{{ delimit $captionParts " | " }}" class="block overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100 p-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-800">
             <img src="{{ $thumbURL }}" alt="{{ $title }}" loading="lazy" class="h-auto w-full rounded-md object-contain" />
             <div class="mt-2 px-1 pb-1 text-sm text-neutral-700 dark:text-neutral-200">
-              <p class="font-medium">{{ $title }}</p>
               <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ delimit (slice $country $city $dateText) " · " }}</p>
             </div>
           </a>
@@ -63,6 +76,8 @@
     <p id="footprints-empty" class="mt-4 hidden rounded-lg border border-dashed border-neutral-300 p-3 text-sm text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">{{ $tNoPhotosMatch }}</p>
   </section>
 
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <link rel="stylesheet" href="{{ $mapCssURL }}">
   <script>
     (function () {
@@ -72,11 +87,9 @@
       const cards = Array.from(document.querySelectorAll(".footprint-photo-card"));
       const albumEl = document.getElementById("footprints-album");
       const emptyEl = document.getElementById("footprints-empty");
-      const selectedCountryEl = document.getElementById("footprints-selected-country");
       const isEn = {{ if $isEn }}true{{ else }}false{{ end }};
       const mapInitFail = {{ $mapInitFail | jsonify }};
       const mapNoData = {{ $mapNoData | jsonify }};
-      const tAllCountries = {{ $tAllCountries | jsonify }};
       const tSelectAuthor = {{ $tSelectAuthor | jsonify }};
       const mapLibUrl = "{{ $mapLibURL }}";
       const mapWorldUrl = "{{ $mapWorldURL }}";
@@ -89,6 +102,12 @@
       let selectedRegionCode = "";
       let authorOptions = [];
       let themeWatcher = null;
+      let autoRefreshTimer = null;
+      let lastIndexFingerprint = "";
+
+      if (window.Fancybox) {
+        window.Fancybox.bind('[data-fancybox="footprints-album"]', { Images: { zoom: true } });
+      }
 
       const setStatus = (msg) => {
         if (statusEl) statusEl.textContent = msg || "";
@@ -187,16 +206,6 @@
         return uniq(codes).sort((a, b) => a.localeCompare(b));
       };
 
-      const updateSelectedCountryHint = () => {
-        if (!selectedCountryEl) return;
-        if (!selectedRegionCode) {
-          selectedCountryEl.textContent = tAllCountries;
-          return;
-        }
-        const countryName = countryNameByCode.get(selectedRegionCode) || selectedRegionCode;
-        selectedCountryEl.textContent = countryName;
-      };
-
       const isDarkMode = () => {
         const rootDark = document.documentElement.classList.contains("dark");
         const mediaDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -273,7 +282,6 @@
             const authorVisited = new Set(visitedRegionCodesByAuthor());
             if (!authorVisited.has(code)) return;
             selectedRegionCode = selectedRegionCode === code ? "" : code;
-            updateSelectedCountryHint();
             refreshAlbum();
             renderMap();
             const authorLabel = selectedAuthorLabel();
@@ -289,7 +297,6 @@
         cards.forEach((card) => {
           card.dataset.regionCode = resolveCountryCode(card.dataset.countryLower || card.dataset.country || "");
         });
-        updateSelectedCountryHint();
         refreshAlbum();
         renderMap();
 
@@ -351,6 +358,31 @@
         });
         themeWatcher.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
       }
+
+      const fetchIndexFingerprint = async () => {
+        const res = await fetch(`/index.json?t=${Date.now()}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`index fetch failed: ${res.status}`);
+        const text = await res.text();
+        return `${text.length}:${text.slice(0, 120)}`;
+      };
+
+      const initAutoRefreshAfterDeploy = async () => {
+        try {
+          lastIndexFingerprint = await fetchIndexFingerprint();
+        } catch (_) {
+          return;
+        }
+        autoRefreshTimer = window.setInterval(async () => {
+          if (document.visibilityState === "hidden") return;
+          try {
+            const next = await fetchIndexFingerprint();
+            if (next !== lastIndexFingerprint) {
+              window.location.reload();
+            }
+          } catch (_) {}
+        }, 45000);
+      };
+      initAutoRefreshAfterDeploy();
 
       (async function init() {
         try {
