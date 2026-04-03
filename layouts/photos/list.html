@@ -46,8 +46,24 @@
 
   {{ $items := hugo.Data.gallery.photos.photos | default (slice) }}
   {{ if gt (len $items) 0 }}
+    <style>
+      #album-grid.album-masonry {
+        column-count: 2;
+        column-gap: 0.75rem;
+      }
+      @media (min-width: 640px) {
+        #album-grid.album-masonry { column-count: 3; }
+      }
+      @media (min-width: 1024px) {
+        #album-grid.album-masonry { column-count: 4; }
+      }
+      #album-grid .photo-card {
+        break-inside: avoid;
+        margin-bottom: 0.75rem;
+      }
+    </style>
     {{ $sorted := sort $items "taken_at" "desc" }}
-    <section id="album-grid" class="mt-8 columns-2 gap-3 sm:columns-3 lg:columns-4 2xl:columns-5">
+    <section id="album-grid" class="album-masonry mt-8">
       {{ range $sorted }}
         {{ $imgURL := .url }}
         {{ $thumbURL := .thumb | default $imgURL }}
@@ -78,7 +94,7 @@
         {{ if gt (len $settings) 0 }}{{ $captionParts = $captionParts | append (delimit $settings " | ") }}{{ end }}
         {{ with .description }}{{ $captionParts = $captionParts | append . }}{{ end }}
         <article
-          class="photo-card mb-4 break-inside-avoid"
+          class="photo-card"
           data-title="{{ lower $title }}"
           data-description="{{ lower (.description | default "") }}"
           data-author="{{ lower $author }}"
@@ -91,7 +107,7 @@
             href="{{ $imgURL }}"
             data-fancybox="album"
             data-caption="{{ delimit $captionParts " | " }}"
-            class="mx-auto flex w-[94%] items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100 p-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-800">
+            class="flex w-full items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100 p-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-800">
             <div class="relative w-full">
               <div class="img-skeleton absolute inset-0 rounded-md bg-neutral-200/80 dark:bg-neutral-700/70 animate-pulse"></div>
               <img
@@ -306,6 +322,16 @@
         const getRes = await fetch(getUrl, { headers });
         if (!getRes.ok) {
           const msg = await getRes.text();
+          if (getRes.status === 401) {
+            throw new Error(isEn
+              ? "GitHub token is invalid/expired, or missing Contents read/write permission."
+              : "GitHub Token 无效/已过期，或缺少 Contents 读写权限。");
+          }
+          if (getRes.status === 403) {
+            throw new Error(isEn
+              ? "GitHub token permission denied. Check repo access and Contents read/write permission."
+              : "GitHub Token 权限不足，请检查仓库访问权限和 Contents 读写权限。");
+          }
           throw new Error(`GET ${path} failed (${getRes.status}): ${msg.slice(0, 120)}`);
         }
         const fileJson = await getRes.json();

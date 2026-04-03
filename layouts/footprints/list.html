@@ -1,7 +1,9 @@
 {{ define "main" }}
   {{ $isEn := eq .Site.Language.Lang "en" }}
-  {{ $tAuthors := cond $isEn "Authors" "作者" }}
-  {{ $tNoData := cond $isEn "No footprint data yet. Add country and city fields in data/gallery/photos.yaml." "暂无足迹数据。请在 data/gallery/photos.yaml 中为照片增加 country 与 city 字段。" }}
+  {{ $mapInitFail := cond $isEn "Map failed to initialize." "地图初始化失败。" }}
+  {{ $mapCssURL := printf "%s?v=%s" ("vendor/jsvectormap/jsvectormap.min.css" | relURL) (readFile "static/vendor/jsvectormap/jsvectormap.min.css" | md5) }}
+  {{ $mapLibURL := printf "%s?v=%s" ("vendor/jsvectormap/jsvectormap.min.js" | relURL) (readFile "static/vendor/jsvectormap/jsvectormap.min.js" | md5) }}
+  {{ $mapWorldURL := printf "%s?v=%s" ("vendor/jsvectormap/world.js" | relURL) (readFile "static/vendor/jsvectormap/world.js" | md5) }}
 
   <header class="mt-6">
     <h1 class="text-4xl font-extrabold text-neutral-900 dark:text-neutral">{{ .Title }}</h1>
@@ -14,278 +16,119 @@
     {{ .Content }}
   </section>
 
-  {{ $items := hugo.Data.gallery.photos.photos | default (slice) }}
-  {{ $footprints := slice }}
-  {{ range sort $items "taken_at" "desc" }}
-    {{ $country := .country | default "" }}
-    {{ $city := .city | default "" }}
-    {{ if or $country $city }}
-      {{ $footprints = $footprints | append (dict
-        "title" (.title | default (cond $isEn "Untitled" "未命名照片"))
-        "author" (.author | default "")
-        "url" .url
-        "thumb" (.thumb | default .url)
-        "taken_at" (.taken_at | default "")
-        "description" (.description | default "")
-        "country" $country
-        "city" $city
-        "camera" (.camera | default "")
-        "lens" (.lens | default "")
-        "focal_length" (.focal_length | default "")
-        "iso" (.iso | default "")
-        "aperture" (.aperture | default "")
-        "shutter" (.shutter | default "")
-      ) }}
-    {{ end }}
-  {{ end }}
+  <section class="mt-8 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+    <div id="footprints-map" class="w-full rounded-lg border border-neutral-200 dark:border-neutral-700" style="height:60vh;min-height:420px;"></div>
+    <p id="footprints-map-status" class="mt-3 text-sm text-neutral-600 dark:text-neutral-300"></p>
+  </section>
 
-  {{ if gt (len $footprints) 0 }}
-    <style>
-      #country-photos .country-thumb {
-        height: 6rem;
-        width: auto;
-      }
-      @media (min-width: 640px) {
-        #country-photos .country-thumb { height: 7.5rem; }
-      }
-      @media (min-width: 768px) {
-        #country-photos .country-thumb { height: 9rem; }
-      }
-    </style>
+  <link rel="stylesheet" href="{{ $mapCssURL }}">
+  <script>
+    (function () {
+      const mapEl = document.getElementById("footprints-map");
+      const statusEl = document.getElementById("footprints-map-status");
+      const isEn = {{ if $isEn }}true{{ else }}false{{ end }};
+      const mapInitFail = "{{ $mapInitFail }}";
+      const mapLibUrl = "{{ $mapLibURL }}";
+      const mapWorldUrl = "{{ $mapWorldURL }}";
 
-    <section class="mt-5 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
-      <h2 class="text-lg font-semibold text-neutral-900 dark:text-neutral">{{ $tAuthors }}</h2>
-      <div id="footprints-authors" class="mt-3 flex flex-wrap gap-2"></div>
-    </section>
+      const setStatus = (msg) => {
+        if (statusEl) statusEl.textContent = msg || "";
+      };
 
-    <section class="mt-8">
-      <div id="footprints-map" class="w-full rounded-xl border border-neutral-200 dark:border-neutral-700" style="height:52vh;min-height:360px;"></div>
-    </section>
-
-    <section class="mt-5 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
-      <div id="country-photos" class="flex flex-wrap items-start gap-1.5"></div>
-    </section>
-
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsvectormap/dist/css/jsvectormap.min.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
-    <script src="https://cdn.jsdelivr.net/npm/jsvectormap/dist/jsvectormap.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsvectormap/dist/maps/world.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
-    <script>
-      (function () {
-        Fancybox.bind('[data-fancybox^="country-"]', { Images: { zoom: true } });
-
-        const isEn = {{ if $isEn }}true{{ else }}false{{ end }};
-        const entries = {{ $footprints | jsonify | safeJS }};
-        const countryAliasToIso2 = {
-          "china": "CN", "japan": "JP", "south korea": "KR", "korea": "KR", "thailand": "TH", "singapore": "SG",
-          "malaysia": "MY", "indonesia": "ID", "vietnam": "VN", "philippines": "PH", "india": "IN",
-          "united states": "US", "usa": "US", "canada": "CA", "mexico": "MX", "united kingdom": "GB", "uk": "GB",
-          "england": "GB", "france": "FR", "germany": "DE", "italy": "IT", "spain": "ES", "portugal": "PT",
-          "netherlands": "NL", "switzerland": "CH", "austria": "AT", "australia": "AU", "new zealand": "NZ",
-          "turkey": "TR", "united arab emirates": "AE", "uae": "AE"
-        };
-
-        const titleCase = (v) => String(v || "").replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase());
-        const fmtNumber = (n) => new Intl.NumberFormat(isEn ? "en-US" : "zh-CN").format(Number(n || 0));
-        const escAttr = (v) => String(v || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        const bindImageSkeleton = (root = document) => {
-          root.querySelectorAll(".js-skeleton-img").forEach((img) => {
-            if (img.dataset.skelBound === "1") return;
-            img.dataset.skelBound = "1";
-            const done = () => {
-              img.classList.remove("opacity-0");
-              img.classList.add("opacity-100");
-              const sk = img.parentElement && img.parentElement.querySelector(".img-skeleton");
-              if (sk) sk.classList.add("hidden");
-            };
-            if (img.complete) done();
-            img.addEventListener("load", done, { once: true });
-            img.addEventListener("error", done, { once: true });
-          });
-        };
-        const formatDate = (v) => {
-          if (!v) return "";
-          const d = new Date(v);
-          if (isNaN(d)) return "";
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        };
-        const getCaption = (item) => {
-          const parts = [];
-          const placeText = [item.country, item.city].filter(Boolean).join(", ");
-          if (placeText) parts.push(placeText);
-          if (item.camera) parts.push(item.camera);
-          if (item.lens) parts.push(item.lens);
-          const settings = [];
-          if (item.focal_length) settings.push(item.focal_length);
-          if (item.aperture) settings.push(`f/${item.aperture}`);
-          if (item.shutter) settings.push(item.shutter);
-          if (item.iso) settings.push(`ISO ${item.iso}`);
-          if (settings.length) parts.push(settings.join(" | "));
-          if (item.description) parts.push(item.description);
-          return parts.join(" | ");
-        };
-
-        const unknownAuthor = isEn ? "Unknown" : "未署名";
-        const allEntries = entries.map((item) => {
-          const country = titleCase(String(item.country || "").trim());
-          const city = titleCase(String(item.city || "").trim());
-          const author = titleCase(String(item.author || "").trim()) || unknownAuthor;
-          return { ...item, country, city, author };
-        });
-        const authorNames = Array.from(new Set(allEntries.map((i) => i.author))).sort((a, b) => a.localeCompare(b));
-        let activeAuthor = authorNames[0] || unknownAuthor;
-
-        const isDark = () => document.documentElement.classList.contains("dark");
-        const getMapPalette = () => {
-          if (isDark()) {
-            return {
-              background: "#0f172a",
-              initialFill: "#1f2937",
-              initialStroke: "#334155",
-              visitedFill: "#1d4f76",
-              activeFill: "#38bdf8",
-              activeStroke: "#7dd3fc",
-            };
-          }
-          return {
-            background: "#f8fafc",
-            initialFill: "#e8eef5",
-            initialStroke: "#c8d5e5",
-            visitedFill: "#8bb8de",
-            activeFill: "#0061b0",
-            activeStroke: "#00467f",
-          };
-        };
-
-        let mapInstance = null;
-        let activeCountry = "";
-        let currentCountryMap = new Map();
-        const isoForCountry = (country) => countryAliasToIso2[String(country || "").toLowerCase()] || "";
-        const renderMap = () => {
-          if (mapInstance && typeof mapInstance.destroy === "function") mapInstance.destroy();
-          const p = getMapPalette();
-          const activeIso = isoForCountry(activeCountry);
-          const visitedIsos = Array.from(currentCountryMap.keys()).map((name) => isoForCountry(name)).filter(Boolean);
-          const regionValues = {};
-          visitedIsos.forEach((iso) => { regionValues[iso] = 1; });
-          if (activeIso) regionValues[activeIso] = 2;
-          mapInstance = new jsVectorMap({
-            selector: "#footprints-map",
-            map: "world",
-            zoomOnScroll: false,
-            zoomButtons: true,
-            backgroundColor: p.background,
-            regionStyle: {
-              initial: { fill: p.initialFill, stroke: p.initialStroke, strokeWidth: 0.7 },
-              selected: { fill: p.activeFill, stroke: p.activeStroke, strokeWidth: 1.1 },
-            },
-            series: {
-              regions: [{
-                attribute: "fill",
-                scale: {
-                  1: p.visitedFill,
-                  2: p.activeFill,
-                },
-                values: regionValues,
-              }],
-            },
-            onRegionClick: (event, code) => {
-              event.preventDefault();
-              const selected = Array.from(currentCountryMap.keys()).find((countryName) => isoForCountry(countryName) === code);
-              if (!selected) return;
-              setActiveCountry(selected, currentCountryMap, true);
-            },
-          });
-        };
-        const buildIndex = (list) => {
-          const countryMap = new Map();
-          list.forEach((item) => {
-            if (item.country) {
-              if (!countryMap.has(item.country)) countryMap.set(item.country, []);
-              countryMap.get(item.country).push(item);
-            }
-          });
-          return { countryMap };
-        };
-
-        const htmlObserver = new MutationObserver((mutations) => {
-          for (const m of mutations) {
-            if (m.type === "attributes" && m.attributeName === "class") {
-              const current = activeAuthor === "__all__" ? allEntries : allEntries.filter((x) => x.author === activeAuthor);
-              const idx = buildIndex(current);
-              currentCountryMap = idx.countryMap;
-              if (activeCountry && idx.countryMap.has(activeCountry)) setActiveCountry(activeCountry, idx.countryMap);
-              else {
-                const first = Array.from(idx.countryMap.keys()).sort((a, b) => a.localeCompare(b))[0] || "";
-                setActiveCountry(first, idx.countryMap);
-              }
-              break;
-            }
-          }
-        });
-        htmlObserver.observe(document.documentElement, { attributes: true });
-
-        const authorWrap = document.getElementById("footprints-authors");
-        const countryPhotos = document.getElementById("country-photos");
-
-        const renderCountryPhotos = (country, countryMap) => {
-          const list = countryMap.get(country) || [];
-          countryPhotos.innerHTML = list.map((item) => `
-            <a href="${item.url}" data-fancybox="country-${escAttr(country)}" data-caption="${escAttr(getCaption(item))}" class="group block">
-              <div class="relative flex items-center justify-center rounded-sm bg-neutral-100 p-1 dark:bg-neutral-800">
-                <div class="img-skeleton absolute inset-0 rounded-sm bg-neutral-200/80 dark:bg-neutral-700/70 animate-pulse"></div>
-                <img src="${item.thumb}" alt="${item.title}" loading="lazy" class="js-skeleton-img country-thumb block opacity-0 transition-opacity duration-500 group-hover:opacity-90" />
-              </div>
-            </a>
-          `).join("");
-          Fancybox.bind('[data-fancybox^="country-"]', { Images: { zoom: true } });
-          bindImageSkeleton(countryPhotos);
-        };
-
-        const setActiveCountry = (country, countryMap, fromMap = false) => {
-          activeCountry = country || "";
-          renderCountryPhotos(activeCountry, countryMap);
-          renderMap();
-        };
-
-        const renderDashboard = () => {
-          const list = allEntries.filter((x) => x.author === activeAuthor);
-          const { countryMap } = buildIndex(list);
-          currentCountryMap = countryMap;
-          renderMap();
-          const countries = Array.from(countryMap.keys()).sort((a, b) => a.localeCompare(b));
-          if (!countries.length) {
-            countryPhotos.innerHTML = "";
+      const loadScript = (src) =>
+        new Promise((resolve, reject) => {
+          const existing = document.querySelector(`script[data-map-src="${src}"]`);
+          if (existing) {
+            if (existing.dataset.loaded === "1") return resolve();
+            existing.addEventListener("load", () => resolve(), { once: true });
+            existing.addEventListener("error", () => reject(new Error(`load failed: ${src}`)), { once: true });
             return;
           }
-          const defaultCountry = activeCountry && countryMap.has(activeCountry) ? activeCountry : countries[0];
-          setActiveCountry(defaultCountry, countryMap);
-        };
 
-        authorWrap.innerHTML = authorNames.map((name, idx) => {
-          const count = allEntries.filter((e) => e.author === name).length;
-          return `<button type="button" data-author="${escAttr(name)}" class="author-chip inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium shadow-sm transition hover:-translate-y-0.5 hover:shadow ${idx === 0 ? "border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-200" : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"}">${name} (${fmtNumber(count)})</button>`;
-        }).join("");
-        authorWrap.onclick = (e) => {
-          const btn = e.target.closest(".author-chip");
-          if (!btn) return;
-          activeAuthor = btn.dataset.author || activeAuthor;
-          authorWrap.querySelectorAll(".author-chip").forEach((chip) => {
-            chip.classList.remove("border-primary-500", "bg-primary-50", "text-primary-700", "dark:bg-primary-900/40", "dark:text-primary-200");
-            chip.classList.add("border-neutral-300", "bg-white", "text-neutral-700", "dark:border-neutral-600", "dark:bg-neutral-800", "dark:text-neutral-200");
-          });
-          btn.classList.remove("border-neutral-300", "bg-white", "text-neutral-700", "dark:border-neutral-600", "dark:bg-neutral-800", "dark:text-neutral-200");
-          btn.classList.add("border-primary-500", "bg-primary-50", "text-primary-700", "dark:bg-primary-900/40", "dark:text-primary-200");
-          renderDashboard();
-        };
+          const s = document.createElement("script");
+          s.src = src;
+          s.async = false;
+          s.defer = false;
+          s.dataset.mapSrc = src;
+          s.onload = () => {
+            s.dataset.loaded = "1";
+            resolve();
+          };
+          s.onerror = () => reject(new Error(`load failed: ${src}`));
+          document.head.appendChild(s);
+        });
 
-        renderDashboard();
+      const getMapName = () => {
+        const hasMaps = Boolean(window.jsVectorMap && window.jsVectorMap.maps);
+        const keys = hasMaps ? Object.keys(window.jsVectorMap.maps || {}) : [];
+        const name = keys.includes("world")
+          ? "world"
+          : (keys.includes("world_merc") ? "world_merc" : (keys.find((k) => /^world/i.test(k)) || ""));
+        return { name, keys };
+      };
+
+      const renderMap = () => {
+        if (!window.jsVectorMap) {
+          throw new Error("jsVectorMap not found");
+        }
+
+        const { name, keys } = getMapName();
+        if (!name) {
+          throw new Error(`world map not found; keys=${keys.join(",") || "empty"}`);
+        }
+
+        new window.jsVectorMap({
+          selector: "#footprints-map",
+          map: name,
+          zoomOnScroll: true,
+          zoomButtons: true,
+          backgroundColor: "transparent",
+          regionStyle: {
+            initial: { fill: "#cfdbe8", stroke: "#98aec6", strokeWidth: 0.7 },
+            hover: { fill: "#6fa6d8", cursor: "pointer" },
+            selected: { fill: "#0061b0" },
+          },
+        });
+
+        setStatus(isEn ? `Map loaded: ${name}` : `地图加载成功：${name}`);
+      };
+
+      const fail = (err) => {
+        if (mapEl) {
+          mapEl.classList.add("flex", "items-center", "justify-center");
+          mapEl.innerHTML = `<p class="px-3 text-sm text-neutral-600 dark:text-neutral-300">${mapInitFail}</p>`;
+        }
+        const msg = err && err.message ? err.message : String(err);
+        setStatus((isEn ? "Load error: " : "加载错误：") + msg);
+      };
+
+      (async function init() {
+        try {
+          await loadScript(mapLibUrl);
+          await loadScript(mapWorldUrl);
+
+          let tries = 0;
+          let picked = "";
+          while (tries < 12) {
+            const { name } = getMapName();
+            if (name) {
+              picked = name;
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 100));
+            tries += 1;
+          }
+
+          if (!picked) {
+            // One extra hard retry for the world data file.
+            await loadScript(mapWorldUrl + "&retry=1");
+          }
+
+          renderMap();
+        } catch (err) {
+          fail(err);
+        }
       })();
-    </script>
-  {{ else }}
-    <section class="mt-8 rounded-xl border border-dashed border-neutral-300 p-6 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
-      {{ $tNoData }}
-    </section>
-  {{ end }}
+    })();
+  </script>
 {{ end }}
