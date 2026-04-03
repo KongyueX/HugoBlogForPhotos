@@ -78,12 +78,12 @@
             href="{{ $imgURL }}"
             data-fancybox="album"
             data-caption="{{ $title }}{{ with .location }} | {{ . }}{{ end }}{{ with .description }} | {{ . }}{{ end }}"
-            class="block aspect-[4/3] overflow-hidden bg-neutral-100 dark:bg-neutral-800">
+            class="flex h-56 items-center justify-center overflow-hidden bg-neutral-100 p-2 dark:bg-neutral-800">
             <img
               src="{{ $thumbURL }}"
               alt="{{ $title }}"
               loading="lazy"
-              class="h-full w-full object-cover transition duration-300 hover:scale-105" />
+              class="max-h-full max-w-full object-contain transition duration-300 hover:scale-[1.02]" />
           </a>
 
           <div class="space-y-2 p-3 sm:p-4">
@@ -397,10 +397,14 @@
             const shutter = formatShutter(exifData.ExposureTime);
             const location = [country, city].filter(Boolean).join(", ");
 
+            const originalUrl = (json.data.image && json.data.image.url) || json.data.url || json.data.display_url || "";
+            const thumbUrl = (json.data.thumb && json.data.thumb.url) || originalUrl;
+            if (!originalUrl) throw new Error(`${file.name} upload succeeded but image url is missing`);
+
             const lines = [
               `  - title: "${esc(file.name.replace(/\.[^.]+$/, ""))}"`,
-              `    url: "${esc(json.data.url)}"`,
-              `    thumb: "${esc((json.data.thumb && json.data.thumb.url) || json.data.url)}"`,
+              `    url: "${esc(originalUrl)}"`,
+              `    thumb: "${esc(thumbUrl)}"`,
               `    taken_at: "${esc(taken)}"`,
               `    country: "${esc(country)}"`,
               `    city: "${esc(city)}"`,
