@@ -1,6 +1,13 @@
 {{ define "main" }}
   {{ $isEn := eq .Site.Language.Lang "en" }}
   {{ $mapInitFail := cond $isEn "Map failed to initialize." "地图初始化失败。" }}
+  {{ $mapNoData := cond $isEn "No photo data available." "暂无照片数据。" }}
+  {{ $tAuthor := cond $isEn "Author" "作者" }}
+  {{ $tAllCountries := cond $isEn "All Countries" "全部国家" }}
+  {{ $tNoPhotosMatch := cond $isEn "No photos for current author/country." "当前作者/国家没有照片。" }}
+  {{ $tSelectAuthor := cond $isEn "Select an author to view visited countries." "选择作者后查看去过的国家。" }}
+  {{ $items := hugo.Data.gallery.photos.photos | default (slice) }}
+  {{ $sorted := sort $items "taken_at" "desc" }}
   {{ $mapCssURL := printf "%s?v=%s" ("vendor/jsvectormap/jsvectormap.min.css" | relURL) (readFile "static/vendor/jsvectormap/jsvectormap.min.css" | md5) }}
   {{ $mapLibURL := printf "%s?v=%s" ("vendor/jsvectormap/jsvectormap.min.js" | relURL) (readFile "static/vendor/jsvectormap/jsvectormap.min.js" | md5) }}
   {{ $mapWorldURL := printf "%s?v=%s" ("vendor/jsvectormap/world.js" | relURL) (readFile "static/vendor/jsvectormap/world.js" | md5) }}
@@ -17,8 +24,43 @@
   </section>
 
   <section class="mt-8 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+    <div class="mb-4 grid gap-3 sm:grid-cols-[220px_1fr] sm:items-center">
+      <label for="footprints-author" class="text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ $tAuthor }}</label>
+      <select id="footprints-author" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800"></select>
+    </div>
     <div id="footprints-map" class="w-full rounded-lg border border-neutral-200 dark:border-neutral-700" style="height:60vh;min-height:420px;"></div>
     <p id="footprints-map-status" class="mt-3 text-sm text-neutral-600 dark:text-neutral-300"></p>
+  </section>
+
+  <section class="mt-8 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+    <p id="footprints-selected-country" class="mb-4 text-sm text-neutral-600 dark:text-neutral-300">{{ $tAllCountries }}</p>
+    <div id="footprints-album" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {{ range $sorted }}
+        {{ $imgURL := .url }}
+        {{ $thumbURL := .thumb | default $imgURL }}
+        {{ $title := .title | default (cond $isEn "Untitled" "未命名照片") }}
+        {{ $author := .author | default "" }}
+        {{ $country := .country | default "" }}
+        {{ $city := .city | default "" }}
+        {{ $dateText := "" }}
+        {{ with .taken_at }}{{ $dateText = (time .).Format "2006-01-02" }}{{ end }}
+        <article
+          class="footprint-photo-card"
+          data-author="{{ lower $author }}"
+          data-author-label="{{ $author }}"
+          data-country="{{ $country }}"
+          data-country-lower="{{ lower $country }}">
+          <a href="{{ $imgURL }}" target="_blank" rel="noreferrer" class="block overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100 p-2 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-800">
+            <img src="{{ $thumbURL }}" alt="{{ $title }}" loading="lazy" class="h-auto w-full rounded-md object-contain" />
+            <div class="mt-2 px-1 pb-1 text-sm text-neutral-700 dark:text-neutral-200">
+              <p class="font-medium">{{ $title }}</p>
+              <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ delimit (slice $country $city $dateText) " · " }}</p>
+            </div>
+          </a>
+        </article>
+      {{ end }}
+    </div>
+    <p id="footprints-empty" class="mt-4 hidden rounded-lg border border-dashed border-neutral-300 p-3 text-sm text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">{{ $tNoPhotosMatch }}</p>
   </section>
 
   <link rel="stylesheet" href="{{ $mapCssURL }}">
@@ -26,14 +68,43 @@
     (function () {
       const mapEl = document.getElementById("footprints-map");
       const statusEl = document.getElementById("footprints-map-status");
+      const authorSel = document.getElementById("footprints-author");
+      const cards = Array.from(document.querySelectorAll(".footprint-photo-card"));
+      const albumEl = document.getElementById("footprints-album");
+      const emptyEl = document.getElementById("footprints-empty");
+      const selectedCountryEl = document.getElementById("footprints-selected-country");
       const isEn = {{ if $isEn }}true{{ else }}false{{ end }};
-      const mapInitFail = "{{ $mapInitFail }}";
+      const mapInitFail = {{ $mapInitFail | jsonify }};
+      const mapNoData = {{ $mapNoData | jsonify }};
+      const tAllCountries = {{ $tAllCountries | jsonify }};
+      const tSelectAuthor = {{ $tSelectAuthor | jsonify }};
       const mapLibUrl = "{{ $mapLibURL }}";
       const mapWorldUrl = "{{ $mapWorldURL }}";
+      let mapInstance = null;
+      let mapName = "";
+      let mapPaths = {};
+      let countryCodeByNormName = new Map();
+      let countryNameByCode = new Map();
+      let selectedAuthor = "";
+      let selectedRegionCode = "";
+      let authorOptions = [];
+      let themeWatcher = null;
 
       const setStatus = (msg) => {
         if (statusEl) statusEl.textContent = msg || "";
       };
+
+      const normalizeText = (v) => String(v || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const toAuthorId = (v) => normalizeText(v);
+      const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
 
       const loadScript = (src) =>
         new Promise((resolve, reject) => {
@@ -58,39 +129,175 @@
           document.head.appendChild(s);
         });
 
-      const getMapName = () => {
-        const hasMaps = Boolean(window.jsVectorMap && window.jsVectorMap.maps);
-        const keys = hasMaps ? Object.keys(window.jsVectorMap.maps || {}) : [];
-        const name = keys.includes("world")
-          ? "world"
-          : (keys.includes("world_merc") ? "world_merc" : (keys.find((k) => /^world/i.test(k)) || ""));
-        return { name, keys };
+      const buildCountryCodeIndex = () => {
+        countryCodeByNormName = new Map();
+        countryNameByCode = new Map();
+
+        Object.keys(mapPaths || {}).forEach((code) => {
+          const name = mapPaths[code] && mapPaths[code].name ? mapPaths[code].name : code;
+          countryNameByCode.set(code, name);
+          const n = normalizeText(name);
+          if (n) countryCodeByNormName.set(n, code);
+        });
+
+        if (typeof Intl !== "undefined" && Intl.DisplayNames) {
+          try {
+            const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
+            Object.keys(mapPaths || {}).forEach((code) => {
+              const n = normalizeText(regionNames.of(code));
+              if (n && !countryCodeByNormName.has(n)) countryCodeByNormName.set(n, code);
+            });
+          } catch (_) {}
+        }
+
+        [
+          ["usa", "US"],
+          ["united states", "US"],
+          ["united states of america", "US"],
+          ["uk", "GB"],
+          ["england", "GB"],
+          ["great britain", "GB"],
+          ["south korea", "KR"],
+          ["north korea", "KP"],
+          ["czech republic", "CZ"],
+          ["russia", "RU"],
+          ["vietnam", "VN"],
+          ["uae", "AE"],
+        ].forEach(([alias, code]) => {
+          if (mapPaths[code]) countryCodeByNormName.set(alias, code);
+        });
+      };
+
+      const resolveCountryCode = (countryName) => {
+        const norm = normalizeText(countryName);
+        if (!norm) return "";
+        return countryCodeByNormName.get(norm) || "";
+      };
+
+      const selectedAuthorLabel = () => {
+        const hit = authorOptions.find((x) => x.id === selectedAuthor);
+        return hit ? hit.label : "";
+      };
+
+      const visitedRegionCodesByAuthor = () => {
+        const codes = cards
+          .filter((card) => card.dataset.author === selectedAuthor)
+          .map((card) => card.dataset.regionCode)
+          .filter(Boolean);
+        return uniq(codes).sort((a, b) => a.localeCompare(b));
+      };
+
+      const updateSelectedCountryHint = () => {
+        if (!selectedCountryEl) return;
+        if (!selectedRegionCode) {
+          selectedCountryEl.textContent = tAllCountries;
+          return;
+        }
+        const countryName = countryNameByCode.get(selectedRegionCode) || selectedRegionCode;
+        selectedCountryEl.textContent = countryName;
+      };
+
+      const isDarkMode = () => {
+        const rootDark = document.documentElement.classList.contains("dark");
+        const mediaDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        return rootDark || mediaDark;
+      };
+
+      const getMapPalette = () => {
+        if (isDarkMode()) {
+          return {
+            initialFill: "#2A3441",
+            initialStroke: "#455468",
+            hoverFill: "#4B6B8F",
+            selectedFill: "#D17B49",
+            visitedFill: "#6AA3C8",
+          };
+        }
+        return {
+          initialFill: "#DDE5EE",
+          initialStroke: "#A8B8C9",
+          hoverFill: "#89A9C8",
+          selectedFill: "#C97B52",
+          visitedFill: "#6F9FC3",
+        };
+      };
+
+      const refreshAlbum = () => {
+        let visibleCount = 0;
+        cards.forEach((card) => {
+          const hitAuthor = card.dataset.author === selectedAuthor;
+          const hitCountry = !selectedRegionCode || card.dataset.regionCode === selectedRegionCode;
+          const visible = hitAuthor && hitCountry;
+          card.classList.toggle("hidden", !visible);
+          if (visible) visibleCount += 1;
+        });
+        if (emptyEl) emptyEl.classList.toggle("hidden", visibleCount !== 0);
       };
 
       const renderMap = () => {
-        if (!window.jsVectorMap) {
-          throw new Error("jsVectorMap not found");
+        const palette = getMapPalette();
+        const visitedCodes = visitedRegionCodesByAuthor();
+        if (selectedRegionCode && !mapPaths[selectedRegionCode]) selectedRegionCode = "";
+        if (selectedRegionCode && !visitedCodes.includes(selectedRegionCode)) {
+          selectedRegionCode = "";
         }
+        const visitedValues = {};
+        visitedCodes.forEach((code) => { visitedValues[code] = 1; });
 
-        const { name, keys } = getMapName();
-        if (!name) {
-          throw new Error(`world map not found; keys=${keys.join(",") || "empty"}`);
+        if (mapInstance && typeof mapInstance.destroy === "function") {
+          mapInstance.destroy();
+          mapInstance = null;
         }
+        if (mapEl) mapEl.innerHTML = "";
 
-        new window.jsVectorMap({
+        mapInstance = new window.jsVectorMap({
           selector: "#footprints-map",
-          map: name,
+          map: mapName,
           zoomOnScroll: true,
           zoomButtons: true,
           backgroundColor: "transparent",
+          selectedRegions: selectedRegionCode ? [selectedRegionCode] : [],
           regionStyle: {
-            initial: { fill: "#cfdbe8", stroke: "#98aec6", strokeWidth: 0.7 },
-            hover: { fill: "#6fa6d8", cursor: "pointer" },
-            selected: { fill: "#0061b0" },
+            initial: { fill: palette.initialFill, stroke: palette.initialStroke, strokeWidth: 0.7 },
+            hover: { fill: palette.hoverFill, cursor: "pointer" },
+            selected: { fill: palette.selectedFill },
+          },
+          series: {
+            regions: [{
+              attribute: "fill",
+              values: visitedValues,
+              scale: [palette.visitedFill, palette.visitedFill],
+            }],
+          },
+          onRegionClick: function (event, code) {
+            const authorVisited = new Set(visitedRegionCodesByAuthor());
+            if (!authorVisited.has(code)) return;
+            selectedRegionCode = selectedRegionCode === code ? "" : code;
+            updateSelectedCountryHint();
+            refreshAlbum();
+            renderMap();
+            const authorLabel = selectedAuthorLabel();
+            const countryCount = visitedRegionCodesByAuthor().length;
+            setStatus(isEn
+              ? `${authorLabel} visited ${countryCount} countries.`
+              : `${authorLabel}去过${countryCount}个国家。`);
           },
         });
+      };
 
-        setStatus(isEn ? `Map loaded: ${name}` : `地图加载成功：${name}`);
+      const refreshPage = () => {
+        cards.forEach((card) => {
+          card.dataset.regionCode = resolveCountryCode(card.dataset.countryLower || card.dataset.country || "");
+        });
+        updateSelectedCountryHint();
+        refreshAlbum();
+        renderMap();
+
+        const authorLabel = selectedAuthorLabel();
+        const countryCount = visitedRegionCodesByAuthor().length;
+        setStatus(isEn
+          ? `${authorLabel} visited ${countryCount} countries.`
+          : `${authorLabel}去过${countryCount}个国家。`);
       };
 
       const fail = (err) => {
@@ -102,29 +309,78 @@
         setStatus((isEn ? "Load error: " : "加载错误：") + msg);
       };
 
+      const initAuthorSelector = () => {
+        if (!authorSel) return;
+        const authorsRaw = uniq(cards.map((card) => card.dataset.authorLabel).filter(Boolean));
+        authorOptions = authorsRaw.map((label) => ({ id: toAuthorId(label), label }));
+
+        cards.forEach((card) => {
+          card.dataset.author = toAuthorId(card.dataset.authorLabel || "");
+        });
+
+        authorSel.innerHTML = authorOptions
+          .map((a) => `<option value="${a.id}">${a.label}</option>`)
+          .join("");
+
+        selectedAuthor = authorOptions[0] ? authorOptions[0].id : "";
+        authorSel.value = selectedAuthor;
+
+        authorSel.addEventListener("input", () => {
+          selectedAuthor = authorSel.value;
+          selectedRegionCode = "";
+          refreshPage();
+        });
+      };
+
+      if (!cards.length) {
+        if (albumEl) albumEl.innerHTML = "";
+        if (emptyEl) emptyEl.classList.remove("hidden");
+        if (authorSel) authorSel.innerHTML = "";
+        if (mapEl) {
+          mapEl.classList.add("flex", "items-center", "justify-center");
+          mapEl.innerHTML = `<p class="px-3 text-sm text-neutral-600 dark:text-neutral-300">${mapNoData}</p>`;
+        }
+        setStatus(tSelectAuthor);
+        return;
+      }
+
+      initAuthorSelector();
+      if (window.MutationObserver) {
+        themeWatcher = new MutationObserver(() => {
+          renderMap();
+        });
+        themeWatcher.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+      }
+
       (async function init() {
         try {
           await loadScript(mapLibUrl);
           await loadScript(mapWorldUrl);
-
-          let tries = 0;
-          let picked = "";
-          while (tries < 12) {
-            const { name } = getMapName();
-            if (name) {
-              picked = name;
-              break;
-            }
-            await new Promise((r) => setTimeout(r, 100));
-            tries += 1;
-          }
-
-          if (!picked) {
-            // One extra hard retry for the world data file.
+          mapName = "world";
+          let probe = null;
+          try {
+            probe = new window.jsVectorMap({
+              selector: "#footprints-map",
+              map: mapName,
+              zoomOnScroll: true,
+              zoomButtons: true,
+              backgroundColor: "transparent",
+            });
+          } catch (_) {
             await loadScript(mapWorldUrl + "&retry=1");
+            probe = new window.jsVectorMap({
+              selector: "#footprints-map",
+              map: mapName,
+              zoomOnScroll: true,
+              zoomButtons: true,
+              backgroundColor: "transparent",
+            });
           }
-
-          renderMap();
+          mapPaths = (probe && probe._mapData && probe._mapData.paths) || {};
+          if (probe && typeof probe.destroy === "function") probe.destroy();
+          if (!Object.keys(mapPaths).length) throw new Error("world map paths not found");
+          buildCountryCodeIndex();
+          refreshPage();
         } catch (err) {
           fail(err);
         }
