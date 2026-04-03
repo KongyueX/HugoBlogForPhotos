@@ -14,4 +14,4 @@ sharingLinks: []
 
 Hi, I'm Kongyue.
 
-I use photography to capture daily moments, travel memories, and urban light. 
+I use photography to capture daily moments.
