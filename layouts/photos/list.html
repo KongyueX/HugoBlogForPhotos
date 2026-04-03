@@ -7,11 +7,6 @@
   {{ $tYear := cond $isEn "Year" "年份" }}
   {{ $tReset := cond $isEn "Reset" "重置" }}
   {{ $tNoData := cond $isEn "No photos yet. Add entries in data/gallery/photos.yaml." "还没有照片数据。请在 data/gallery/photos.yaml 中添加数据。" }}
-  {{ $tTakenAt := cond $isEn "Taken" "拍摄时间" }}
-  {{ $tLocation := cond $isEn "Location" "拍摄地点" }}
-  {{ $tCamera := cond $isEn "Camera" "相机" }}
-  {{ $tLens := cond $isEn "Lens" "镜头" }}
-  {{ $tSettings := cond $isEn "Settings" "参数" }}
 
   <header class="mt-6 flex flex-wrap items-start justify-between gap-4">
     <div>
@@ -70,9 +65,9 @@
         {{ with .shutter }}{{ $settings = $settings | append . }}{{ end }}
         {{ with .iso }}{{ $settings = $settings | append (printf "ISO %v" .) }}{{ end }}
         {{ $captionParts := slice }}
-        {{ with .camera }}{{ $captionParts = $captionParts | append (printf "%s: %s" $tCamera .) }}{{ end }}
-        {{ with .lens }}{{ $captionParts = $captionParts | append (printf "%s: %s" $tLens .) }}{{ end }}
-        {{ if gt (len $settings) 0 }}{{ $captionParts = $captionParts | append (printf "%s: %s" $tSettings (delimit $settings " | ")) }}{{ end }}
+        {{ with .camera }}{{ $captionParts = $captionParts | append . }}{{ end }}
+        {{ with .lens }}{{ $captionParts = $captionParts | append . }}{{ end }}
+        {{ if gt (len $settings) 0 }}{{ $captionParts = $captionParts | append (delimit $settings " | ") }}{{ end }}
         <article
           class="photo-card overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900"
           data-title="{{ lower $title }}"
@@ -86,19 +81,19 @@
             href="{{ $imgURL }}"
             data-fancybox="album"
             data-caption="{{ delimit $captionParts " | " }}"
-            class="block overflow-hidden bg-neutral-100 dark:bg-neutral-800">
+            class="flex items-center justify-center bg-neutral-100 p-2 dark:bg-neutral-800">
             <img
               src="{{ $thumbURL }}"
               alt="{{ $title }}"
               loading="lazy"
-              class="block h-auto w-full object-contain transition duration-300 hover:scale-[1.01]" />
+              class="block h-auto w-auto max-h-72 max-w-full object-contain" />
           </a>
           <div class="space-y-1 p-3 sm:p-4">
-            {{ with .taken_at }}<p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $tTakenAt }}: {{ . }}</p>{{ end }}
+            {{ with .taken_at }}<p class="text-xs text-neutral-600 dark:text-neutral-300">{{ . }}</p>{{ end }}
             {{ if or $countryDisplay $cityDisplay }}
-              <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $tLocation }}: {{ delimit (slice $countryDisplay $cityDisplay) ", " }}</p>
+              <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ delimit (slice $countryDisplay $cityDisplay) ", " }}</p>
             {{ else if .location }}
-              <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $tLocation }}: {{ .location }}</p>
+              <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ .location }}</p>
             {{ end }}
           </div>
         </article>
