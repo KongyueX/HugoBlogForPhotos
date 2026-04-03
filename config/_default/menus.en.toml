@@ -1,0 +1,19 @@
+[[main]]
+  name = "Home"
+  url = "/"
+  weight = 5
+
+[[main]]
+  name = "Gallery"
+  pageRef = "photos"
+  weight = 10
+
+[[main]]
+  name = "Footprints"
+  pageRef = "footprints"
+  weight = 15
+
+[[main]]
+  name = "About"
+  pageRef = "about"
+  weight = 20

@@ -1,0 +1,23 @@
+languageCode = "zh-cn"
+languageName = "简体中文"
+weight = 9
+title = "Kongyue 的相册"
+
+[params]
+  displayName = "简体中文"
+  isoCode = "zh-cn"
+  rtl = false
+  dateFormat = "2006-01-02"
+  logo = ""
+  description = "Kongyue 的个人摄影与足迹相册。"
+
+[params.author]
+  name = "Kongyue"
+  image = "img/Author.png"
+  headline = "用照片记录世界，也记录自己。"
+  bio = "热爱拍照、旅行与城市漫游。"
+  links = [
+    { envelope = "mailto:l1506311900@gmail.com" },
+    { github = "https://github.com/KongyueX" },
+    { linkedin = "https://www.linkedin.com/in/xiaoyi-liang-737314297" },
+  ]

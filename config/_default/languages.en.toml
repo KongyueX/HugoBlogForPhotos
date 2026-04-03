@@ -1,0 +1,24 @@
+languageCode = "en"
+languageName = "English"
+weight = 1
+title = "Kongyue Gallery"
+
+[params]
+  displayName = "English"
+  isoCode = "en"
+  rtl = false
+  dateFormat = "2 January 2006"
+  logo = ""
+  description = "Personal photography and travel footprints by Kongyue."
+
+[params.author]
+  name = "Kongyue"
+  email = "l1506311900@gmail.com"
+  image = "img/Author.png"
+  headline = "Capturing moments and places through photos."
+  bio = "Photography, travel, and urban walks."
+  links = [
+    { envelope = "mailto:l1506311900@gmail.com" },
+    { github = "https://github.com/KongyueX" },
+    { linkedin = "https://www.linkedin.com/in/xiaoyi-liang-737314297" },
+  ]

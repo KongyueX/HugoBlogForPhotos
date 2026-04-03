@@ -1,0 +1,377 @@
+{{ define "main" }}
+  {{ $isEn := eq .Site.Language.Lang "en" }}
+  {{ $tUploadBtn := cond $isEn "Upload To IMGBB" "上传到 IMGBB" }}
+  {{ $tFilterTitle := cond $isEn "Filter Photos" "筛选照片" }}
+  {{ $tCountry := cond $isEn "Country" "国家" }}
+  {{ $tCity := cond $isEn "City" "城市" }}
+  {{ $tYear := cond $isEn "Year" "年份" }}
+  {{ $tReset := cond $isEn "Reset" "重置" }}
+  {{ $tNoData := cond $isEn "No photos yet. Add entries in data/gallery/photos.yaml." "还没有照片数据。请在 data/gallery/photos.yaml 中添加数据。" }}
+  {{ $tTakenAt := cond $isEn "Taken" "拍摄时间" }}
+  {{ $tLocation := cond $isEn "Location" "拍摄地点" }}
+  {{ $tCamera := cond $isEn "Camera" "相机" }}
+  {{ $tLens := cond $isEn "Lens" "镜头" }}
+  {{ $tSettings := cond $isEn "Settings" "参数" }}
+
+  <header class="mt-6 flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-4xl font-extrabold text-neutral-900 dark:text-neutral">{{ .Title }}</h1>
+      {{ with .Description }}
+        <p class="mt-2 text-neutral-600 dark:text-neutral-300">{{ . }}</p>
+      {{ end }}
+    </div>
+    <button id="open-upload-modal" type="button" class="rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-500">
+      {{ $tUploadBtn }}
+    </button>
+  </header>
+
+  <section class="mt-4 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+    <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral">{{ $tFilterTitle }}</h2>
+    <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <select id="filter-country" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800">
+        <option value="">{{ $tCountry }}</option>
+      </select>
+      <select id="filter-city" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800">
+        <option value="">{{ $tCity }}</option>
+      </select>
+      <select id="filter-year" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800">
+        <option value="">{{ $tYear }}</option>
+      </select>
+      <button id="filter-reset" type="button" class="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-600 dark:hover:bg-neutral-800">{{ $tReset }}</button>
+    </div>
+  </section>
+
+  <section class="mt-6 prose dark:prose-invert max-w-none">
+    {{ .Content }}
+  </section>
+
+  {{ $items := hugo.Data.gallery.photos.photos | default (slice) }}
+  {{ if gt (len $items) 0 }}
+    {{ $sorted := sort $items "taken_at" "desc" }}
+    <section id="album-grid" class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {{ range $sorted }}
+        {{ $imgURL := .url }}
+        {{ $thumbURL := .thumb | default $imgURL }}
+        {{ $title := .title | default (cond $isEn "Untitled" "未命名照片") }}
+        {{ $country := .country | default "" }}
+        {{ $city := .city | default "" }}
+        {{ if and (eq $country "") .location }}
+          {{ $parts := split .location "," }}
+          {{ if ge (len $parts) 1 }}{{ $country = trim (index $parts 0) " " }}{{ end }}
+          {{ if ge (len $parts) 2 }}{{ $city = trim (index $parts 1) " " }}{{ end }}
+        {{ end }}
+        {{ $year := "" }}
+        {{ with .taken_at }}{{ $year = (time .).Format "2006" }}{{ end }}
+        {{ $countryDisplay := title $country }}
+        {{ $cityDisplay := title $city }}
+
+        <article
+          class="photo-card overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900"
+          data-title="{{ lower $title }}"
+          data-description="{{ lower (.description | default "") }}"
+          data-country="{{ lower $country }}"
+          data-city="{{ lower $city }}"
+          data-year="{{ $year }}"
+          data-camera="{{ lower (.camera | default "") }}"
+          data-lens="{{ lower (.lens | default "") }}">
+          <a
+            href="{{ $imgURL }}"
+            data-fancybox="album"
+            data-caption="{{ $title }}{{ with .location }} | {{ . }}{{ end }}{{ with .description }} | {{ . }}{{ end }}"
+            class="block aspect-[4/3] overflow-hidden bg-neutral-100 dark:bg-neutral-800">
+            <img
+              src="{{ $thumbURL }}"
+              alt="{{ $title }}"
+              loading="lazy"
+              class="h-full w-full object-cover transition duration-300 hover:scale-105" />
+          </a>
+
+          <div class="space-y-2 p-3 sm:p-4">
+            <h2 class="line-clamp-1 text-base font-semibold text-neutral-900 dark:text-neutral">{{ $title }}</h2>
+            {{ with .taken_at }}<p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $tTakenAt }}: {{ . }}</p>{{ end }}
+            {{ if or $countryDisplay $cityDisplay }}
+              <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $tLocation }}: {{ delimit (slice $countryDisplay $cityDisplay) ", " }}</p>
+            {{ else if .location }}
+              <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $tLocation }}: {{ .location }}</p>
+            {{ end }}
+
+            {{ if .camera }}<p class="text-xs text-neutral-700 dark:text-neutral-200">{{ $tCamera }}: {{ .camera }}</p>{{ end }}
+            {{ if .lens }}<p class="text-xs text-neutral-700 dark:text-neutral-200">{{ $tLens }}: {{ .lens }}</p>{{ end }}
+            {{ if or .focal_length .iso .aperture .shutter }}
+              <div class="pt-0.5">
+                <p class="text-xs text-neutral-700 dark:text-neutral-200">{{ $tSettings }}:</p>
+                <div class="mt-1 flex flex-wrap gap-1.5">
+                  {{ with .focal_length }}<span class="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-200">{{ . }}</span>{{ end }}
+                  {{ with .aperture }}<span class="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200">f/{{ . }}</span>{{ end }}
+                  {{ with .shutter }}<span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">{{ . }}</span>{{ end }}
+                  {{ with .iso }}<span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">ISO {{ . }}</span>{{ end }}
+                </div>
+              </div>
+            {{ end }}
+            {{ with .description }}<p class="line-clamp-2 text-sm text-neutral-700 dark:text-neutral-200">{{ . }}</p>{{ end }}
+          </div>
+        </article>
+      {{ end }}
+    </section>
+    <p id="album-empty" class="mt-6 hidden rounded-lg border border-dashed border-neutral-300 p-4 text-sm text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+      {{ cond $isEn "No photos match current filters." "当前筛选条件下没有照片。" }}
+    </p>
+  {{ else }}
+    <section class="mt-8 rounded-xl border border-dashed border-neutral-300 p-6 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">{{ $tNoData }}</section>
+  {{ end }}
+
+  <div id="upload-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 p-3 sm:p-4">
+    <div class="max-h-[88vh] w-full max-w-3xl overflow-auto rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+      <div class="mb-4 flex items-center justify-between">
+        <h3 class="text-xl font-bold text-neutral-900 dark:text-neutral">{{ cond $isEn "Batch Upload To IMGBB" "批量上传到 IMGBB" }}</h3>
+        <button id="close-upload-modal" type="button" class="rounded px-2 py-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800">{{ cond $isEn "Close" "关闭" }}</button>
+      </div>
+
+      <div class="grid gap-4">
+        <label class="block"><span class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">API Key</span><input id="imgbb-key" type="text" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /></label>
+        <label class="block"><span class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ cond $isEn "Expiration (seconds, optional)" "过期时间（秒，可选）" }}</span><input id="imgbb-expiration" type="number" min="60" placeholder="600" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /></label>
+        <label class="block"><span class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ cond $isEn "Select photos" "选择多张照片" }}</span><input id="imgbb-files" type="file" accept="image/*" multiple class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /></label>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="block"><span class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ cond $isEn "Country (English)" "国家（英文）" }}</span><input id="imgbb-country" list="imgbb-country-list" type="text" placeholder="e.g. China" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /><datalist id="imgbb-country-list"></datalist></label>
+          <label class="block"><span class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ cond $isEn "City (English)" "城市（英文）" }}</span><input id="imgbb-city" list="imgbb-city-list" type="text" placeholder="e.g. Shanghai" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /><datalist id="imgbb-city-list"></datalist></label>
+        </div>
+
+        <div class="flex flex-wrap gap-3">
+          <button id="imgbb-upload-btn" type="button" class="rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-500">{{ cond $isEn "Upload" "开始上传" }}</button>
+          <button id="imgbb-copy-yaml" type="button" class="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-600 dark:hover:bg-neutral-800">{{ cond $isEn "Copy YAML" "复制 YAML" }}</button>
+        </div>
+
+        <p id="imgbb-status" class="text-sm text-neutral-600 dark:text-neutral-300"></p>
+        <label class="block"><span class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">YAML</span><textarea id="imgbb-yaml" rows="14" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-xs dark:border-neutral-600 dark:bg-neutral-800" readonly></textarea></label>
+      </div>
+    </div>
+  </div>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+  <script>
+    Fancybox.bind('[data-fancybox="album"]', { Images: { zoom: true } });
+
+    (function () {
+      const isEn = {{ if $isEn }}true{{ else }}false{{ end }};
+      const T = {
+        keyMissing: isEn ? "Please input API Key." : "请填写 API Key。",
+        fileMissing: isEn ? "Please select at least one photo." : "请至少选择一张照片。",
+        countryEn: isEn ? "Country must be in English (e.g. China)." : "国家请使用英文填写（例如 China）。",
+        cityEn: isEn ? "City must be in English (e.g. Shanghai)." : "城市请使用英文填写（例如 Shanghai）。",
+        copied: isEn ? "YAML copied." : "YAML 已复制。",
+        preparing: (n) => (isEn ? `Preparing ${n} photos...` : `准备上传 ${n} 张照片...`),
+        uploading: (i, n, name) => (isEn ? `Uploading (${i}/${n}): ${name}` : `上传中 (${i}/${n})：${name}`),
+        done: (n) => (isEn ? `Uploaded ${n} photos. Copy YAML to data/gallery/photos.yaml.` : `上传完成，共 ${n} 张。请复制 YAML 到 data/gallery/photos.yaml。`),
+        failed: (m) => (isEn ? `Failed: ${m}` : `失败：${m}`),
+      };
+
+      const KEY_STORE = "imgbb_api_key";
+      const DEFAULT_KEY = "";
+      const modal = document.getElementById("upload-modal");
+      const openBtn = document.getElementById("open-upload-modal");
+      const closeBtn = document.getElementById("close-upload-modal");
+      const keyInput = document.getElementById("imgbb-key");
+      const expInput = document.getElementById("imgbb-expiration");
+      const filesInput = document.getElementById("imgbb-files");
+      const countryInput = document.getElementById("imgbb-country");
+      const cityInput = document.getElementById("imgbb-city");
+      const countryListEl = document.getElementById("imgbb-country-list");
+      const cityListEl = document.getElementById("imgbb-city-list");
+      const uploadBtn = document.getElementById("imgbb-upload-btn");
+      const copyBtn = document.getElementById("imgbb-copy-yaml");
+      const statusEl = document.getElementById("imgbb-status");
+      const yamlEl = document.getElementById("imgbb-yaml");
+
+      keyInput.value = localStorage.getItem(KEY_STORE) || DEFAULT_KEY;
+      expInput.value = "600";
+
+      const COUNTRY_TO_CITIES = {
+        Australia: ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide"],
+        Canada: ["Toronto", "Vancouver", "Montreal", "Calgary", "Ottawa"],
+        China: ["Beijing", "Shanghai", "Shenzhen", "Guangzhou", "Xiamen", "Hangzhou", "Chengdu", "Hong Kong"],
+        France: ["Paris", "Lyon", "Marseille", "Nice", "Bordeaux"],
+        Germany: ["Berlin", "Munich", "Hamburg", "Frankfurt", "Cologne"],
+        India: ["Mumbai", "Delhi", "Bangalore", "Hyderabad", "Kolkata"],
+        Indonesia: ["Jakarta", "Bali", "Surabaya", "Bandung", "Yogyakarta"],
+        Italy: ["Rome", "Milan", "Venice", "Florence", "Naples"],
+        Japan: ["Tokyo", "Osaka", "Kyoto", "Sapporo", "Fukuoka"],
+        Malaysia: ["Kuala Lumpur", "Penang", "Johor Bahru", "Malacca", "Kota Kinabalu"],
+        Netherlands: ["Amsterdam", "Rotterdam", "The Hague", "Utrecht", "Eindhoven"],
+        "New Zealand": ["Auckland", "Wellington", "Christchurch", "Queenstown", "Hamilton"],
+        Philippines: ["Manila", "Cebu", "Davao", "Baguio", "Boracay"],
+        Portugal: ["Lisbon", "Porto", "Faro", "Coimbra", "Braga"],
+        Singapore: ["Singapore"],
+        "South Korea": ["Seoul", "Busan", "Incheon", "Daegu", "Jeju"],
+        Spain: ["Madrid", "Barcelona", "Seville", "Valencia", "Malaga"],
+        Switzerland: ["Zurich", "Geneva", "Bern", "Lucerne", "Basel"],
+        Thailand: ["Bangkok", "Chiang Mai", "Phuket", "Pattaya", "Krabi"],
+        Turkey: ["Istanbul", "Ankara", "Izmir", "Antalya", "Cappadocia"],
+        "United Arab Emirates": ["Dubai", "Abu Dhabi", "Sharjah"],
+        "United Kingdom": ["London", "Manchester", "Edinburgh", "Birmingham", "Liverpool"],
+        "United States": ["New York", "Los Angeles", "San Francisco", "Chicago", "Seattle", "Boston", "Las Vegas", "Honolulu"],
+        Vietnam: ["Hanoi", "Ho Chi Minh City", "Da Nang", "Hoi An", "Nha Trang"],
+      };
+      const COUNTRY_OPTIONS = Object.keys(COUNTRY_TO_CITIES).sort((a, b) => a.localeCompare(b));
+      const fillDataList = (el, values) => { el.innerHTML = values.map((v) => `<option value="${v}"></option>`).join(""); };
+      fillDataList(countryListEl, COUNTRY_OPTIONS);
+      fillDataList(cityListEl, []);
+      countryInput.addEventListener("input", () => {
+        const key = COUNTRY_OPTIONS.find((n) => n.toLowerCase() === countryInput.value.trim().toLowerCase());
+        fillDataList(cityListEl, key ? COUNTRY_TO_CITIES[key] : []);
+      });
+
+      const esc = (v) => String(v || "").replace(/"/g, '\\"');
+      const looksEnglish = (v) => /^[A-Za-z][A-Za-z .,'-]*$/.test(v);
+      const toISO = (d) => (d instanceof Date && !isNaN(d) ? d.toISOString() : "");
+      const fileToBase64 = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || "").split(",")[1] || "");
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const formatShutter = (v) => {
+        if (!v) return "";
+        if (typeof v === "number") {
+          if (v >= 1) return `${v}s`;
+          const d = Math.round(1 / v);
+          return d > 0 ? `1/${d}s` : `${v}s`;
+        }
+        return String(v);
+      };
+
+      openBtn.addEventListener("click", () => { modal.classList.remove("hidden"); modal.classList.add("flex"); });
+      closeBtn.addEventListener("click", () => { modal.classList.add("hidden"); modal.classList.remove("flex"); });
+      modal.addEventListener("click", (e) => { if (e.target === modal) { modal.classList.add("hidden"); modal.classList.remove("flex"); } });
+
+      copyBtn.addEventListener("click", async () => {
+        if (!yamlEl.value.trim()) return;
+        await navigator.clipboard.writeText(yamlEl.value);
+        statusEl.textContent = T.copied;
+      });
+
+      uploadBtn.addEventListener("click", async () => {
+        try {
+          const key = keyInput.value.trim();
+          const files = Array.from(filesInput.files || []);
+          const expiration = expInput.value.trim();
+          const country = countryInput.value.trim();
+          const city = cityInput.value.trim();
+          if (!key) return void (statusEl.textContent = T.keyMissing);
+          if (!files.length) return void (statusEl.textContent = T.fileMissing);
+          if (country && !looksEnglish(country)) return void (statusEl.textContent = T.countryEn);
+          if (city && !looksEnglish(city)) return void (statusEl.textContent = T.cityEn);
+
+          localStorage.setItem(KEY_STORE, key);
+          statusEl.textContent = T.preparing(files.length);
+          const allItems = [];
+
+          for (let i = 0; i < files.length; i += 1) {
+            const file = files[i];
+            statusEl.textContent = T.uploading(i + 1, files.length, file.name);
+            let exif = {};
+            try {
+              const parsed = await exifr.parse(file);
+              if (parsed && typeof parsed === "object") exif = parsed;
+            } catch (_) {}
+
+            const base64 = await fileToBase64(file);
+            const formData = new FormData();
+            formData.append("image", base64);
+            let apiUrl = `https://api.imgbb.com/1/upload?key=${encodeURIComponent(key)}`;
+            if (expiration) apiUrl += `&expiration=${encodeURIComponent(expiration)}`;
+            const res = await fetch(apiUrl, { method: "POST", body: formData });
+            const raw = await res.text();
+            let json;
+            try { json = JSON.parse(raw); } catch (_) { throw new Error(raw.slice(0, 120)); }
+            if (!json || !json.success || !json.data) throw new Error((json && json.error && json.error.message) || `${file.name} upload failed`);
+
+            const exifData = exif && typeof exif === "object" ? exif : {};
+            const taken = toISO(exifData.DateTimeOriginal || exifData.CreateDate);
+            const camera = [exifData.Make, exifData.Model].filter(Boolean).join(" ").trim();
+            const lens = [exifData.LensMake, exifData.LensModel].filter(Boolean).join(" ").trim() || (exifData.LensModel || "");
+            const focal = exifData.FocalLength ? `${exifData.FocalLength}mm` : "";
+            const iso = exifData.ISO || exifData.ISOSpeedRatings || "";
+            const aperture = exifData.FNumber || "";
+            const shutter = formatShutter(exifData.ExposureTime);
+            const location = [country, city].filter(Boolean).join(", ");
+
+            const lines = [
+              `  - title: "${esc(file.name.replace(/\.[^.]+$/, ""))}"`,
+              `    url: "${esc(json.data.url)}"`,
+              `    thumb: "${esc((json.data.thumb && json.data.thumb.url) || json.data.url)}"`,
+              `    taken_at: "${esc(taken)}"`,
+              `    country: "${esc(country)}"`,
+              `    city: "${esc(city)}"`,
+              `    location: "${esc(location)}"`,
+            ];
+            if (camera) lines.push(`    camera: "${esc(camera)}"`);
+            if (lens) lines.push(`    lens: "${esc(lens)}"`);
+            if (focal) lines.push(`    focal_length: "${esc(focal)}"`);
+            if (iso) lines.push(`    iso: "${esc(iso)}"`);
+            if (aperture) lines.push(`    aperture: "${esc(aperture)}"`);
+            if (shutter) lines.push(`    shutter: "${esc(shutter)}"`);
+            allItems.push(lines.join("\n"));
+          }
+
+          yamlEl.value = allItems.join("\n\n");
+          statusEl.textContent = T.done(files.length);
+        } catch (err) {
+          statusEl.textContent = T.failed(err.message || String(err));
+        }
+      });
+
+      // Album filters
+      const cards = Array.from(document.querySelectorAll(".photo-card"));
+      const countrySel = document.getElementById("filter-country");
+      const citySel = document.getElementById("filter-city");
+      const yearSel = document.getElementById("filter-year");
+      const resetBtn = document.getElementById("filter-reset");
+      const emptyEl = document.getElementById("album-empty");
+      const titleCase = (v) => String(v || "").replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase());
+
+      const uniq = (arr) => Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+      const allCountries = uniq(cards.map((c) => c.dataset.country));
+      const allYears = uniq(cards.map((c) => c.dataset.year));
+      countrySel.innerHTML = `<option value="">${isEn ? "Country" : "国家"}</option>` + allCountries.map((v) => `<option value="${v}">${titleCase(v)}</option>`).join("");
+      yearSel.innerHTML = `<option value="">${isEn ? "Year" : "年份"}</option>` + allYears.map((v) => `<option value="${v}">${v}</option>`).join("");
+
+      const refreshCities = () => {
+        const c = countrySel.value;
+        const cities = uniq(cards.filter((card) => !c || card.dataset.country === c).map((card) => card.dataset.city));
+        const prev = citySel.value;
+        citySel.innerHTML = `<option value="">${isEn ? "City" : "城市"}</option>` + cities.map((v) => `<option value="${v}">${titleCase(v)}</option>`).join("");
+        if (cities.includes(prev)) citySel.value = prev;
+      };
+
+      const applyFilters = () => {
+        const c = countrySel.value;
+        const city = citySel.value;
+        const y = yearSel.value;
+        let shown = 0;
+        cards.forEach((card) => {
+          const hitC = !c || card.dataset.country === c;
+          const hitCity = !city || card.dataset.city === city;
+          const hitY = !y || card.dataset.year === y;
+          const visible = hitC && hitCity && hitY;
+          card.classList.toggle("hidden", !visible);
+          if (visible) shown += 1;
+        });
+        if (emptyEl) emptyEl.classList.toggle("hidden", shown !== 0);
+      };
+
+      refreshCities();
+      [countrySel, citySel, yearSel].forEach((el) => el && el.addEventListener("input", () => { if (el === countrySel) refreshCities(); applyFilters(); }));
+      resetBtn && resetBtn.addEventListener("click", () => {
+        countrySel.value = "";
+        refreshCities();
+        citySel.value = "";
+        yearSel.value = "";
+        applyFilters();
+      });
+    })();
+  </script>
+{{ end }}

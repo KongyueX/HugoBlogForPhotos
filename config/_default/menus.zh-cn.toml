@@ -1,0 +1,19 @@
+[[main]]
+  name = "主页"
+  url = "/"
+  weight = 5
+
+[[main]]
+  name = "相册"
+  pageRef = "photos"
+  weight = 10
+
+[[main]]
+  name = "足迹"
+  pageRef = "footprints"
+  weight = 15
+
+[[main]]
+  name = "个人简介"
+  pageRef = "about"
+  weight = 20
