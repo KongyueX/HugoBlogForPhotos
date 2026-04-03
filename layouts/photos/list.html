@@ -137,8 +137,19 @@
           <label class="block"><span class="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{{ cond $isEn "City (English)" "城市（英文）" }}</span><input id="imgbb-city" list="imgbb-city-list" type="text" placeholder="e.g. Shanghai" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /><datalist id="imgbb-city-list"></datalist></label>
         </div>
 
+        <div class="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800/40">
+          <p class="text-sm font-semibold text-neutral-800 dark:text-neutral-100">{{ cond $isEn "Auto publish to GitHub" "自动发布到 GitHub" }}</p>
+          <p class="mt-1 text-xs text-neutral-600 dark:text-neutral-300">{{ cond $isEn "Token requires repo content write permission." "Token 需要仓库内容写入权限。" }}</p>
+          <div class="mt-3 grid gap-3 sm:grid-cols-2">
+            <label class="block"><span class="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-200">GitHub Token</span><input id="github-token" type="password" placeholder="ghp_xxx / github_pat_xxx" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /></label>
+            <label class="block"><span class="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-200">{{ cond $isEn "Branch" "分支" }}</span><input id="github-branch" type="text" placeholder="main" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /></label>
+            <label class="block"><span class="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-200">{{ cond $isEn "Repo Owner" "仓库所有者" }}</span><input id="github-owner" type="text" placeholder="KongyueX" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /></label>
+            <label class="block"><span class="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-200">{{ cond $isEn "Repo Name" "仓库名" }}</span><input id="github-repo" type="text" placeholder="HugoBlogForPhotos" class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800" /></label>
+          </div>
+        </div>
+
         <div class="flex flex-wrap gap-3">
-          <button id="imgbb-upload-btn" type="button" class="rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-500">{{ cond $isEn "Upload" "开始上传" }}</button>
+          <button id="imgbb-upload-btn" type="button" class="rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-500">{{ cond $isEn "Upload + Publish" "上传并发布" }}</button>
           <button id="imgbb-copy-yaml" type="button" class="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-600 dark:hover:bg-neutral-800">{{ cond $isEn "Copy YAML" "复制 YAML" }}</button>
         </div>
 
@@ -164,8 +175,15 @@
         copied: isEn ? "YAML copied." : "YAML 已复制。",
         preparing: (n) => (isEn ? `Preparing ${n} photos...` : `准备上传 ${n} 张照片...`),
         uploading: (i, n, name) => (isEn ? `Uploading (${i}/${n}): ${name}` : `上传中 (${i}/${n})：${name}`),
-        done: (n) => (isEn ? `Uploaded ${n} photos. Copy YAML to data/gallery/photos.yaml.` : `上传完成，共 ${n} 张。请复制 YAML 到 data/gallery/photos.yaml。`),
+        done: (n) => (isEn ? `Uploaded ${n} photos.` : `上传完成，共 ${n} 张。`),
+        publishPreparing: isEn ? "Updating repository file..." : "正在更新仓库文件...",
+        publishDone: (url) => (isEn ? `Published. GitHub Actions: ${url}` : `已发布。GitHub Actions：${url}`),
+        publishMissing: isEn ? "Please input GitHub token/owner/repo/branch." : "请填写 GitHub token/owner/repo/branch。",
+        publishFailed: (m) => (isEn ? `Publish failed: ${m}` : `发布失败：${m}`),
         failed: (m) => (isEn ? `Failed: ${m}` : `失败：${m}`),
+        fetchFailed: isEn
+          ? "Network/CORS blocked request. Check browser console for details, and confirm api.imgbb.com is reachable."
+          : "请求被网络/CORS 拦截。请查看浏览器控制台，并确认可访问 api.imgbb.com。",
       };
 
       const KEY_STORE = "imgbb_api_key";
@@ -184,9 +202,25 @@
       const copyBtn = document.getElementById("imgbb-copy-yaml");
       const statusEl = document.getElementById("imgbb-status");
       const yamlEl = document.getElementById("imgbb-yaml");
+      const ghTokenInput = document.getElementById("github-token");
+      const ghOwnerInput = document.getElementById("github-owner");
+      const ghRepoInput = document.getElementById("github-repo");
+      const ghBranchInput = document.getElementById("github-branch");
 
       keyInput.value = localStorage.getItem(KEY_STORE) || DEFAULT_KEY;
       expInput.value = "600";
+      const GH_TOKEN_STORE = "github_token_for_publish";
+      const GH_OWNER_STORE = "github_owner_for_publish";
+      const GH_REPO_STORE = "github_repo_for_publish";
+      const GH_BRANCH_STORE = "github_branch_for_publish";
+      const host = window.location.hostname || "";
+      const pathSeg = (window.location.pathname || "/").split("/").filter(Boolean);
+      const guessedOwner = host.endsWith(".github.io") ? host.replace(".github.io", "") : "";
+      const guessedRepo = pathSeg.length > 0 ? pathSeg[0] : "";
+      ghTokenInput.value = localStorage.getItem(GH_TOKEN_STORE) || "";
+      ghOwnerInput.value = localStorage.getItem(GH_OWNER_STORE) || guessedOwner || "KongyueX";
+      ghRepoInput.value = localStorage.getItem(GH_REPO_STORE) || guessedRepo || "HugoBlogForPhotos";
+      ghBranchInput.value = localStorage.getItem(GH_BRANCH_STORE) || "main";
 
       const COUNTRY_TO_CITIES = {
         Australia: ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide"],
@@ -232,6 +266,70 @@
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
+      const utf8ToBase64 = (str) => {
+        const bytes = new TextEncoder().encode(str);
+        let binary = "";
+        bytes.forEach((b) => { binary += String.fromCharCode(b); });
+        return btoa(binary);
+      };
+      const base64ToUtf8 = (b64) => {
+        const clean = String(b64 || "").replace(/\n/g, "");
+        const binary = atob(clean);
+        const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+        return new TextDecoder().decode(bytes);
+      };
+      const mergeYaml = (current, blocks) => {
+        const trimmed = String(current || "").trimEnd();
+        const additions = blocks.join("\n\n");
+        if (!trimmed) return `photos:\n${additions}\n`;
+        if (!/(^|\n)photos:\s*(\n|$)/.test(trimmed)) throw new Error("data/gallery/photos.yaml missing top-level `photos:`");
+        return `${trimmed}\n\n${additions}\n`;
+      };
+      const publishToGitHub = async (blocks) => {
+        const token = ghTokenInput.value.trim();
+        const owner = ghOwnerInput.value.trim();
+        const repo = ghRepoInput.value.trim();
+        const branch = ghBranchInput.value.trim();
+        if (!token || !owner || !repo || !branch) throw new Error(T.publishMissing);
+        localStorage.setItem(GH_TOKEN_STORE, token);
+        localStorage.setItem(GH_OWNER_STORE, owner);
+        localStorage.setItem(GH_REPO_STORE, repo);
+        localStorage.setItem(GH_BRANCH_STORE, branch);
+
+        const path = "data/gallery/photos.yaml";
+        const getUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}?ref=${encodeURIComponent(branch)}`;
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "Content-Type": "application/json",
+        };
+
+        const getRes = await fetch(getUrl, { headers });
+        if (!getRes.ok) {
+          const msg = await getRes.text();
+          throw new Error(`GET ${path} failed (${getRes.status}): ${msg.slice(0, 120)}`);
+        }
+        const fileJson = await getRes.json();
+        const sha = fileJson.sha;
+        const current = base64ToUtf8(fileJson.content || "");
+        const updated = mergeYaml(current, blocks);
+
+        const putRes = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`, {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({
+            message: `chore: add ${blocks.length} photo(s) from web uploader`,
+            content: utf8ToBase64(updated),
+            sha,
+            branch,
+          }),
+        });
+        if (!putRes.ok) {
+          const msg = await putRes.text();
+          throw new Error(`PUT ${path} failed (${putRes.status}): ${msg.slice(0, 120)}`);
+        }
+        return `https://github.com/${owner}/${repo}/actions`;
+      };
 
       const formatShutter = (v) => {
         if (!v) return "";
@@ -279,11 +377,11 @@
             } catch (_) {}
 
             const base64 = await fileToBase64(file);
-            const formData = new FormData();
+            const formData = new URLSearchParams();
             formData.append("image", base64);
             let apiUrl = `https://api.imgbb.com/1/upload?key=${encodeURIComponent(key)}`;
             if (expiration) apiUrl += `&expiration=${encodeURIComponent(expiration)}`;
-            const res = await fetch(apiUrl, { method: "POST", body: formData });
+            const res = await fetch(apiUrl, { method: "POST", body: formData, mode: "cors" });
             const raw = await res.text();
             let json;
             try { json = JSON.parse(raw); } catch (_) { throw new Error(raw.slice(0, 120)); }
@@ -318,9 +416,20 @@
           }
 
           yamlEl.value = allItems.join("\n\n");
-          statusEl.textContent = T.done(files.length);
+          statusEl.textContent = `${T.done(files.length)} ${T.publishPreparing}`;
+          const actionsUrl = await publishToGitHub(allItems);
+          statusEl.textContent = T.publishDone(actionsUrl);
         } catch (err) {
-          statusEl.textContent = T.failed(err.message || String(err));
+          const message = err && err.message ? err.message : String(err);
+          if (/Failed to fetch|NetworkError|Load failed/i.test(message)) {
+            statusEl.textContent = T.failed(T.fetchFailed);
+            return;
+          }
+          if (/publish/i.test(message) || /GET data\/gallery\/photos\.yaml|PUT data\/gallery\/photos\.yaml/.test(message)) {
+            statusEl.textContent = T.publishFailed(message);
+            return;
+          }
+          statusEl.textContent = T.failed(message);
         }
       });
 
