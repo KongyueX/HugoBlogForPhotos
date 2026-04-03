@@ -3,8 +3,8 @@
 # https://blowfish.page/docs/getting-started/
 
 theme = "blowfish"
-baseURL = "https://localhost:1313"
-relativeURLs = true
+baseURL = "https://kongyuex.github.io/HugoBlogForPhotos/"
+relativeURLs = false
 defaultContentLanguage = "zh-cn"
 disableLanguages = [] #to allow translation work requiring shipping to production
 
