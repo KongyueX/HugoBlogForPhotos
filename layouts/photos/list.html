@@ -46,7 +46,7 @@
     <section id="album-grid" class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {{ range $sorted }}
         {{ $imgURL := .url }}
-        {{ $thumbURL := .thumb | default $imgURL }}
+        {{ $thumbURL := $imgURL }}
         {{ $title := .title | default (cond $isEn "Untitled" "未命名照片") }}
         {{ $country := .country | default "" }}
         {{ $city := .city | default "" }}
@@ -384,7 +384,7 @@
             const location = [country, city].filter(Boolean).join(", ");
 
             const originalUrl = (json.data.image && json.data.image.url) || json.data.url || json.data.display_url || "";
-            const thumbUrl = (json.data.thumb && json.data.thumb.url) || originalUrl;
+            const thumbUrl = (json.data.medium && json.data.medium.url) || originalUrl;
             if (!originalUrl) throw new Error(`${file.name} upload succeeded but image url is missing`);
 
             const lines = [
