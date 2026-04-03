@@ -11,6 +11,7 @@
   {{ $tLocation := cond $isEn "Location" "拍摄地点" }}
   {{ $tCamera := cond $isEn "Camera" "相机" }}
   {{ $tLens := cond $isEn "Lens" "镜头" }}
+  {{ $tSettings := cond $isEn "Settings" "参数" }}
 
   <header class="mt-6 flex flex-wrap items-start justify-between gap-4">
     <div>
@@ -63,7 +64,15 @@
         {{ with .taken_at }}{{ $year = (time .).Format "2006" }}{{ end }}
         {{ $countryDisplay := title $country }}
         {{ $cityDisplay := title $city }}
-
+        {{ $settings := slice }}
+        {{ with .focal_length }}{{ $settings = $settings | append . }}{{ end }}
+        {{ with .aperture }}{{ $settings = $settings | append (printf "f/%v" .) }}{{ end }}
+        {{ with .shutter }}{{ $settings = $settings | append . }}{{ end }}
+        {{ with .iso }}{{ $settings = $settings | append (printf "ISO %v" .) }}{{ end }}
+        {{ $captionParts := slice }}
+        {{ with .camera }}{{ $captionParts = $captionParts | append (printf "%s: %s" $tCamera .) }}{{ end }}
+        {{ with .lens }}{{ $captionParts = $captionParts | append (printf "%s: %s" $tLens .) }}{{ end }}
+        {{ if gt (len $settings) 0 }}{{ $captionParts = $captionParts | append (printf "%s: %s" $tSettings (delimit $settings " | ")) }}{{ end }}
         <article
           class="photo-card overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900"
           data-title="{{ lower $title }}"
@@ -76,27 +85,21 @@
           <a
             href="{{ $imgURL }}"
             data-fancybox="album"
-            data-caption="{{ $title }}{{ with .location }} | {{ . }}{{ end }}{{ with .description }} | {{ . }}{{ end }}"
-            class="block overflow-hidden bg-neutral-100 p-2 dark:bg-neutral-800">
+            data-caption="{{ delimit $captionParts " | " }}"
+            class="block overflow-hidden bg-neutral-100 dark:bg-neutral-800">
             <img
               src="{{ $thumbURL }}"
               alt="{{ $title }}"
               loading="lazy"
-              class="mx-auto h-auto max-h-[75vh] w-full object-contain transition duration-300 hover:scale-[1.02]" />
+              class="block h-auto w-full object-contain transition duration-300 hover:scale-[1.01]" />
           </a>
-
-          <div class="space-y-2 p-3 sm:p-4">
-            <h2 class="line-clamp-1 text-base font-semibold text-neutral-900 dark:text-neutral">{{ $title }}</h2>
+          <div class="space-y-1 p-3 sm:p-4">
             {{ with .taken_at }}<p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $tTakenAt }}: {{ . }}</p>{{ end }}
             {{ if or $countryDisplay $cityDisplay }}
               <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $tLocation }}: {{ delimit (slice $countryDisplay $cityDisplay) ", " }}</p>
             {{ else if .location }}
               <p class="text-xs text-neutral-600 dark:text-neutral-300">{{ $tLocation }}: {{ .location }}</p>
             {{ end }}
-
-            {{ if .camera }}<p class="text-xs text-neutral-700 dark:text-neutral-200">{{ $tCamera }}: {{ .camera }}</p>{{ end }}
-            {{ if .lens }}<p class="text-xs text-neutral-700 dark:text-neutral-200">{{ $tLens }}: {{ .lens }}</p>{{ end }}
-            {{ with .description }}<p class="line-clamp-2 text-sm text-neutral-700 dark:text-neutral-200">{{ . }}</p>{{ end }}
           </div>
         </article>
       {{ end }}
